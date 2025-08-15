@@ -1,0 +1,7 @@
+/output
+*.gpkg
+/.venv
+/.ruff_cache
+/.pytest_cache
+/__pycache__
+/cache
