@@ -28,6 +28,7 @@ def make_graph_from_stations(
         if geom is not None:
             # Get centroid for non-point geometries
             if hasattr(geom, "centroid"):
+                pass
                 point = geom.centroid
             else:
                 point = geom

@@ -20,8 +20,10 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-place = "Hamburg, Germany"
+place = "Luxembourg"
 logger.info(f"Starting fuel station analysis for: {place}")
+MAX_DISTANCE = 300000  # meters
+n_remove = 50
 
 try:
     logger.info("Downloading fuel stations from OpenStreetMap...")
@@ -30,8 +32,10 @@ try:
 
     logger.info("Calculating stations graph using OpenRouteService...")
     G = make_graph_from_stations(
-        stations, api_key=os.getenv("ORS_API_KEY"), max_distance=5000000000
+        stations, api_key=os.getenv("ORS_API_KEY"), max_distance=MAX_DISTANCE
     )
+
+    G = remove_long_edges(G, MAX_DISTANCE)
 
     logger.info("Calculating farness centrality...")
     G, farness = farness_centrality(G, weight="weight")
@@ -42,12 +46,13 @@ try:
     save_graph_to_geopackage(G, farness=farness, out_file="fuel_stations.gpkg")
 
     logger.info("Modify base graph according to fuel stations farness nodes...")
-    G_filtered = filter_graph_stations(G, 50)
+
+    G_filtered = filter_graph_stations(G, n_remove)
     dgf_filtered = graph_to_gdf(G_filtered)
     G_filtered_newly_calculated = make_graph_from_stations(
-        dgf_filtered, api_key=os.getenv("ORS_API_KEY"), max_distance=5000000000
+        dgf_filtered, api_key=os.getenv("ORS_API_KEY"), max_distance=MAX_DISTANCE
     )
-    G_filtered_newly_calculated = remove_long_edges(G_filtered_newly_calculated, 1000)
+    G_filtered_newly_calculated = remove_long_edges(G_filtered_newly_calculated, MAX_DISTANCE)
 
     logger.info("Calculating farness centrality for filtered graph...")
     G_filtered_newly_calculated, farness_filtered_newly_calculated = farness_centrality(G_filtered_newly_calculated, weight="weight")
