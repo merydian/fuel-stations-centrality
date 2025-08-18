@@ -2,6 +2,9 @@ import igraph as ig
 import osmnx as ox
 import numpy as np
 import logging
+from shapely.geometry import Point, MultiPoint
+from shapely.ops import transform
+import pyproj
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +177,51 @@ def get_graph_stats(G):
     stats['min_degree'] = {'value': min(degrees), 'unit': 'connections'}
     logger.debug(f"Degree stats - Avg: {stats['avg_degree']['value']}, Max: {stats['max_degree']['value']}, Min: {stats['min_degree']['value']}")
     
+    # Convex hull area
+    if 'coord' in G.vs.attributes() and G.vcount() >= 3:
+        logger.debug("Computing convex hull area...")
+        try:
+            # Extract coordinates
+            coords = [G.vs[i]['coord'] for i in range(G.vcount())]
+            points = [Point(coord[0], coord[1]) for coord in coords]  # lon, lat
+            
+            # Create MultiPoint geometry
+            multipoint = MultiPoint(points)
+            convex_hull = multipoint.convex_hull
+            
+            # Transform to appropriate UTM zone for area calculation
+            # Use the centroid to determine UTM zone
+            centroid = convex_hull.centroid
+            utm_zone = int((centroid.x + 180) / 6) + 1
+            utm_crs = f"EPSG:{32600 + utm_zone if centroid.y >= 0 else 32700 + utm_zone}"
+            
+            # Project to UTM for accurate area calculation
+            transformer = pyproj.Transformer.from_crs("EPSG:4326", utm_crs, always_xy=True)
+            convex_hull_utm = transform(transformer.transform, convex_hull)
+            
+            # Calculate area in square meters
+            area_m2 = convex_hull_utm.area
+            area_km2 = area_m2 / 1_000_000  # Convert to km²
+            
+            stats['convex_hull_area_m2'] = {'value': area_m2, 'unit': 'square meters'}
+            stats['convex_hull_area_km2'] = {'value': area_km2, 'unit': 'square kilometers'}
+            
+            logger.debug(f"Convex hull area: {area_km2:.2f} km²")
+            
+        except Exception as e:
+            logger.warning(f"Failed to compute convex hull area: {e}")
+            stats['convex_hull_area_m2'] = {'value': "Could not compute", 'unit': 'n/a'}
+            stats['convex_hull_area_km2'] = {'value': "Could not compute", 'unit': 'n/a'}
+    else:
+        if G.vcount() < 3:
+            logger.debug("Insufficient nodes for convex hull calculation")
+            stats['convex_hull_area_m2'] = {'value': "Insufficient nodes", 'unit': 'n/a'}
+            stats['convex_hull_area_km2'] = {'value': "Insufficient nodes", 'unit': 'n/a'}
+        else:
+            logger.debug("No coordinate data for convex hull calculation")
+            stats['convex_hull_area_m2'] = {'value': "No coordinate data", 'unit': 'n/a'}
+            stats['convex_hull_area_km2'] = {'value': "No coordinate data", 'unit': 'n/a'}
+    
     # Centrality measures (for largest connected component if graph is disconnected)
     if is_connected:
         largest_cc = G
@@ -304,6 +352,15 @@ def format_graph_stats(stats, title="Graph Statistics"):
     lines.append(f"  Components: {stats['num_components']['value']} {stats['num_components']['unit']}")
     lines.append(f"  Density: {stats['density']['value']:.6f} ({stats['density']['unit']})")
     
+    # Spatial Statistics
+    if 'convex_hull_area_km2' in stats:
+        lines.append("\nSpatial Statistics:")
+        if isinstance(stats['convex_hull_area_km2']['value'], str):
+            lines.append(f"  Convex Hull Area: {stats['convex_hull_area_km2']['value']} ({stats['convex_hull_area_km2']['unit']})")
+        else:
+            lines.append(f"  Convex Hull Area: {stats['convex_hull_area_km2']['value']:,.2f} {stats['convex_hull_area_km2']['unit']}")
+            lines.append(f"    ({stats['convex_hull_area_m2']['value']:,.0f} {stats['convex_hull_area_m2']['unit']})")
+    
     # Degree Statistics
     lines.append("\nDegree Statistics:")
     lines.append(f"  Average: {stats['avg_degree']['value']:.2f} {stats['avg_degree']['unit']}")
@@ -420,6 +477,16 @@ def compare_graph_stats(stats1, stats2, title1="Graph 1", title2="Graph 2"):
             stat_name = stat.replace('_', ' ').title()
             lines.append(f"  {stat_name}:")
             lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
+    
+    # Spatial Statistics
+    if 'convex_hull_area_km2' in stats1 and 'convex_hull_area_km2' in stats2:
+        lines.append("\nSpatial Statistics:")
+        val1_str = format_value(stats1['convex_hull_area_km2'], 2)
+        val2_str = format_value(stats2['convex_hull_area_km2'], 2)
+        change = calc_change(stats1['convex_hull_area_km2']['value'], stats2['convex_hull_area_km2']['value'])
+        
+        lines.append(f"  Convex Hull Area:")
+        lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
     
     # Degree Statistics
     lines.append("\nDegree Statistics:")

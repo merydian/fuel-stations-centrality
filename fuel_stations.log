@@ -796,3 +796,160 @@
 2025-08-18 13:32:55,656 - __main__ - INFO - ============================================================
 2025-08-18 13:32:55,657 - __main__ - INFO - ANALYSIS COMPLETED SUCCESSFULLY
 2025-08-18 13:32:55,657 - __main__ - INFO - ============================================================
+2025-08-18 13:38:50,045 - __main__ - INFO - ============================================================
+2025-08-18 13:38:50,045 - __main__ - INFO - FUEL STATION CENTRALITY ANALYSIS STARTING
+2025-08-18 13:38:50,045 - __main__ - INFO - ============================================================
+2025-08-18 13:38:50,045 - __main__ - INFO - Analysis parameters:
+2025-08-18 13:38:50,045 - __main__ - INFO -   Place: Luxembourg
+2025-08-18 13:38:50,045 - __main__ - INFO -   Max distance: 500,000 meters
+2025-08-18 13:38:50,045 - __main__ - INFO -   Stations to remove: 50
+2025-08-18 13:38:50,045 - __main__ - INFO -   ORS API Key: SET
+2025-08-18 13:38:50,045 - __main__ - INFO - STEP 1: Loading fuel stations data...
+2025-08-18 13:38:50,045 - __main__ - INFO - Loading stations from file: stations_iran.gpkg
+2025-08-18 13:38:50,097 - __main__ - INFO - Loaded 500 fuel stations
+2025-08-18 13:38:50,097 - __main__ - INFO - STEP 2: Creating station graph using OpenRouteService...
+2025-08-18 13:38:50,098 - ors_router - INFO - Creating graph from 500 fuel stations using profile: driving-car
+2025-08-18 13:38:50,124 - ors_router - INFO - Successfully extracted 500 valid station locations
+2025-08-18 13:38:50,124 - ors_router - INFO - Split into 9 chunks of max 59 locations each
+2025-08-18 13:38:50,124 - ors_router - INFO - Initialized distance matrix
+2025-08-18 13:38:53,354 - ors_router - INFO - Distance matrix progress: 8/81 (9.9%)
+2025-08-18 13:38:56,369 - ors_router - INFO - Distance matrix progress: 16/81 (19.8%)
+2025-08-18 13:39:03,385 - ors_router - INFO - Distance matrix progress: 24/81 (29.6%)
+2025-08-18 13:39:11,950 - ors_router - INFO - Distance matrix progress: 32/81 (39.5%)
+2025-08-18 13:39:15,110 - ors_router - INFO - Distance matrix progress: 40/81 (49.4%)
+2025-08-18 13:39:18,183 - ors_router - INFO - Distance matrix progress: 48/81 (59.3%)
+2025-08-18 13:39:26,284 - ors_router - INFO - Distance matrix progress: 56/81 (69.1%)
+2025-08-18 13:39:29,343 - ors_router - INFO - Distance matrix progress: 64/81 (79.0%)
+2025-08-18 13:39:32,197 - ors_router - INFO - Distance matrix progress: 72/81 (88.9%)
+2025-08-18 13:39:44,592 - ors_router - INFO - Distance matrix progress: 80/81 (98.8%)
+2025-08-18 13:39:44,793 - ors_router - INFO - Distance matrix calculation completed
+2025-08-18 13:39:44,793 - ors_router - INFO - Creating igraph directed graph...
+2025-08-18 13:39:44,793 - ors_router - INFO - Adding edges with distance weights...
+2025-08-18 13:39:44,941 - ors_router - INFO - Graph creation completed: 500 vertices, 249500 edges (246512 with finite weights, 2988 infinite)
+2025-08-18 13:39:44,947 - __main__ - INFO - Initial graph created successfully
+2025-08-18 13:39:44,947 - __main__ - INFO - STEP 3: Filtering long-distance edges...
+2025-08-18 13:39:44,947 - utils - INFO - Removing edges longer than 500,000 meters
+2025-08-18 13:39:45,056 - utils - INFO - Found 186189 edges longer than 500,000 meters (74.6% of all edges)
+2025-08-18 13:39:45,072 - utils - INFO - Removed 186189 long edges. Graph now has 63311 edges
+2025-08-18 13:39:45,075 - __main__ - INFO - Edge filtering completed
+2025-08-18 13:39:45,075 - __main__ - INFO - STEP 4: Computing farness centrality...
+2025-08-18 13:39:45,075 - centrality - INFO - Computing farness centrality for graph with 500 nodes and 63311 edges
+2025-08-18 13:39:45,075 - centrality - INFO - Calculating shortest path distances matrix...
+2025-08-18 13:39:45,218 - centrality - INFO - Distance matrix calculation completed
+2025-08-18 13:39:45,266 - centrality - INFO - Farness centrality computation completed - Avg farness: 394252308.80, Max farness: 787209597.33
+2025-08-18 13:39:45,268 - __main__ - INFO - Farness centrality computation completed
+2025-08-18 13:39:45,268 - __main__ - INFO - STEP 5: Computing initial graph statistics...
+2025-08-18 13:39:45,269 - centrality - INFO - Computing comprehensive graph statistics...
+2025-08-18 13:39:45,269 - centrality - INFO - Graph connectivity: False, Components: 4
+2025-08-18 13:39:45,279 - centrality - INFO - Using largest component with 497 nodes for centrality calculations
+2025-08-18 13:39:45,506 - centrality - WARNING - Failed to compute betweenness centrality: this function got an unexpected keyword argument 'normalized'
+2025-08-18 13:39:46,359 - centrality - INFO - Graph statistics computation completed
+2025-08-18 13:39:46,360 - __main__ - INFO - Initial statistics computed
+2025-08-18 13:39:46,360 - __main__ - INFO - STEP 6: Saving initial graph to GeoPackage...
+2025-08-18 13:39:46,360 - utils - INFO - Saving graph to GeoPackage: fuel_stations.gpkg
+2025-08-18 13:39:46,910 - utils - INFO - Writing graph data to output/fuel_stations.gpkg...
+2025-08-18 13:39:46,960 - pyogrio._io - INFO - Created 500 records
+2025-08-18 13:39:47,296 - pyogrio._io - INFO - Created 63,311 records
+2025-08-18 13:39:47,397 - utils - INFO - Successfully saved graph to output/fuel_stations.gpkg
+2025-08-18 13:39:47,405 - __main__ - INFO - Initial graph saved successfully
+2025-08-18 13:39:47,405 - __main__ - INFO - STEP 7: Filtering stations and creating optimized graph...
+2025-08-18 13:39:47,405 - __main__ - INFO - Filtering stations based on farness centrality...
+2025-08-18 13:39:47,406 - utils - INFO - Filtering graph: removing 50 stations with highest farness
+2025-08-18 13:39:47,406 - utils - INFO - Removing nodes with farness range: 501178228.07 - 787209597.33
+2025-08-18 13:39:47,410 - utils - INFO - Graph filtering completed: 500 → 450 nodes
+2025-08-18 13:39:47,410 - __main__ - INFO - Converting filtered graph to GeoDataFrame...
+2025-08-18 13:39:47,416 - __main__ - INFO - Creating new graph from filtered stations...
+2025-08-18 13:39:47,416 - ors_router - INFO - Creating graph from 450 fuel stations using profile: driving-car
+2025-08-18 13:39:47,439 - ors_router - INFO - Successfully extracted 450 valid station locations
+2025-08-18 13:39:47,439 - ors_router - INFO - Split into 8 chunks of max 59 locations each
+2025-08-18 13:39:47,439 - ors_router - INFO - Initialized distance matrix
+2025-08-18 13:39:49,415 - ors_router - INFO - Distance matrix progress: 6/64 (9.4%)
+2025-08-18 13:39:51,664 - ors_router - INFO - Distance matrix progress: 12/64 (18.8%)
+2025-08-18 13:39:53,840 - ors_router - INFO - Distance matrix progress: 18/64 (28.1%)
+2025-08-18 13:39:56,161 - ors_router - INFO - Distance matrix progress: 24/64 (37.5%)
+2025-08-18 13:39:58,477 - ors_router - INFO - Distance matrix progress: 30/64 (46.9%)
+2025-08-18 13:40:00,872 - ors_router - INFO - Distance matrix progress: 36/64 (56.2%)
+2025-08-18 13:40:04,363 - ors_router - INFO - Distance matrix progress: 42/64 (65.6%)
+2025-08-18 13:40:08,551 - ors_router - INFO - Distance matrix progress: 48/64 (75.0%)
+2025-08-18 13:40:21,992 - ors_router - INFO - Distance matrix progress: 54/64 (84.4%)
+2025-08-18 13:40:23,706 - ors_router - INFO - Distance matrix progress: 60/64 (93.8%)
+2025-08-18 13:40:24,832 - ors_router - INFO - Distance matrix calculation completed
+2025-08-18 13:40:24,832 - ors_router - INFO - Creating igraph directed graph...
+2025-08-18 13:40:24,833 - ors_router - INFO - Adding edges with distance weights...
+2025-08-18 13:40:24,954 - ors_router - INFO - Graph creation completed: 450 vertices, 202050 edges (199362 with finite weights, 2688 infinite)
+2025-08-18 13:40:24,960 - utils - INFO - Removing edges longer than 500,000 meters
+2025-08-18 13:40:25,044 - utils - INFO - Found 142498 edges longer than 500,000 meters (70.5% of all edges)
+2025-08-18 13:40:25,057 - utils - INFO - Removed 142498 long edges. Graph now has 59552 edges
+2025-08-18 13:40:25,059 - __main__ - INFO - Filtered graph creation completed
+2025-08-18 13:40:25,059 - __main__ - INFO - STEP 7b: Creating random comparison graph...
+2025-08-18 13:40:25,059 - __main__ - INFO - Removing random stations for comparison...
+2025-08-18 13:40:25,061 - utils - INFO - Removing 50 random stations from graph
+2025-08-18 13:40:25,061 - utils - INFO - Selected 50 random nodes for removal: [3, 12, 13, 15, 16, 44, 47, 49, 52, 57]...
+2025-08-18 13:40:25,063 - utils - INFO - Random station removal completed: 450 → 400 nodes
+2025-08-18 13:40:25,063 - __main__ - INFO - Converting random graph to GeoDataFrame...
+2025-08-18 13:40:25,068 - __main__ - INFO - Creating new graph from random stations...
+2025-08-18 13:40:25,069 - ors_router - INFO - Creating graph from 400 fuel stations using profile: driving-car
+2025-08-18 13:40:25,089 - ors_router - INFO - Successfully extracted 400 valid station locations
+2025-08-18 13:40:25,089 - ors_router - INFO - Split into 7 chunks of max 59 locations each
+2025-08-18 13:40:25,089 - ors_router - INFO - Initialized distance matrix
+2025-08-18 13:40:26,472 - ors_router - INFO - Distance matrix progress: 4/49 (8.2%)
+2025-08-18 13:40:27,905 - ors_router - INFO - Distance matrix progress: 8/49 (16.3%)
+2025-08-18 13:40:34,218 - ors_router - INFO - Distance matrix progress: 12/49 (24.5%)
+2025-08-18 13:40:35,701 - ors_router - INFO - Distance matrix progress: 16/49 (32.7%)
+2025-08-18 13:40:37,122 - ors_router - INFO - Distance matrix progress: 20/49 (40.8%)
+2025-08-18 13:40:38,570 - ors_router - INFO - Distance matrix progress: 24/49 (49.0%)
+2025-08-18 13:40:39,886 - ors_router - INFO - Distance matrix progress: 28/49 (57.1%)
+2025-08-18 13:40:41,536 - ors_router - INFO - Distance matrix progress: 32/49 (65.3%)
+2025-08-18 13:40:43,071 - ors_router - INFO - Distance matrix progress: 36/49 (73.5%)
+2025-08-18 13:40:44,587 - ors_router - INFO - Distance matrix progress: 40/49 (81.6%)
+2025-08-18 13:40:45,932 - ors_router - INFO - Distance matrix progress: 44/49 (89.8%)
+2025-08-18 13:40:52,390 - ors_router - INFO - Distance matrix progress: 48/49 (98.0%)
+2025-08-18 13:40:52,688 - ors_router - INFO - Distance matrix calculation completed
+2025-08-18 13:40:52,688 - ors_router - INFO - Creating igraph directed graph...
+2025-08-18 13:40:52,688 - ors_router - INFO - Adding edges with distance weights...
+2025-08-18 13:40:52,742 - ors_router - INFO - Graph creation completed: 400 vertices, 159600 edges (158006 with finite weights, 1594 infinite)
+2025-08-18 13:40:52,748 - utils - INFO - Removing edges longer than 500,000 meters
+2025-08-18 13:40:52,815 - utils - INFO - Found 112848 edges longer than 500,000 meters (70.7% of all edges)
+2025-08-18 13:40:52,825 - utils - INFO - Removed 112848 long edges. Graph now has 46752 edges
+2025-08-18 13:40:52,827 - __main__ - INFO - Random comparison graph creation completed
+2025-08-18 13:40:52,827 - __main__ - INFO - STEP 8: Computing farness centrality for filtered graph...
+2025-08-18 13:40:52,827 - centrality - INFO - Computing farness centrality for graph with 450 nodes and 59552 edges
+2025-08-18 13:40:52,827 - centrality - INFO - Calculating shortest path distances matrix...
+2025-08-18 13:40:52,943 - centrality - INFO - Distance matrix calculation completed
+2025-08-18 13:40:52,983 - centrality - INFO - Farness centrality computation completed - Avg farness: 318690916.06, Max farness: 456606516.61
+2025-08-18 13:40:52,989 - __main__ - INFO - Filtered graph farness computation completed
+2025-08-18 13:40:52,989 - __main__ - INFO - STEP 8b: Computing farness centrality for random comparison graph...
+2025-08-18 13:40:52,989 - centrality - INFO - Computing farness centrality for graph with 400 nodes and 46752 edges
+2025-08-18 13:40:52,989 - centrality - INFO - Calculating shortest path distances matrix...
+2025-08-18 13:40:53,077 - centrality - INFO - Distance matrix calculation completed
+2025-08-18 13:40:53,108 - centrality - INFO - Farness centrality computation completed - Avg farness: 285265467.35, Max farness: 407858717.58
+2025-08-18 13:40:53,111 - __main__ - INFO - Random comparison graph farness computation completed
+2025-08-18 13:40:53,111 - __main__ - INFO - STEP 9: Saving filtered graph...
+2025-08-18 13:40:53,111 - utils - INFO - Saving graph to GeoPackage: fuel_stations_filtered.gpkg
+2025-08-18 13:40:53,697 - utils - INFO - Writing graph data to output/fuel_stations_filtered.gpkg...
+2025-08-18 13:40:53,719 - pyogrio._io - INFO - Created 450 records
+2025-08-18 13:40:54,043 - pyogrio._io - INFO - Created 59,552 records
+2025-08-18 13:40:54,140 - utils - INFO - Successfully saved graph to output/fuel_stations_filtered.gpkg
+2025-08-18 13:40:54,147 - __main__ - INFO - Filtered graph saved successfully
+2025-08-18 13:40:54,147 - __main__ - INFO - STEP 9b: Saving random comparison graph...
+2025-08-18 13:40:54,147 - utils - INFO - Saving graph to GeoPackage: fuel_stations_random.gpkg
+2025-08-18 13:40:54,562 - utils - INFO - Writing graph data to output/fuel_stations_random.gpkg...
+2025-08-18 13:40:54,586 - pyogrio._io - INFO - Created 400 records
+2025-08-18 13:40:54,842 - pyogrio._io - INFO - Created 46,752 records
+2025-08-18 13:40:54,920 - utils - INFO - Successfully saved graph to output/fuel_stations_random.gpkg
+2025-08-18 13:40:54,925 - __main__ - INFO - Random comparison graph saved successfully
+2025-08-18 13:40:54,925 - __main__ - INFO - STEP 10: Generating comparison statistics...
+2025-08-18 13:40:54,925 - centrality - INFO - Computing comprehensive graph statistics...
+2025-08-18 13:40:54,927 - centrality - INFO - Graph connectivity: False, Components: 4
+2025-08-18 13:40:54,938 - centrality - INFO - Using largest component with 447 nodes for centrality calculations
+2025-08-18 13:40:55,129 - centrality - WARNING - Failed to compute betweenness centrality: this function got an unexpected keyword argument 'normalized'
+2025-08-18 13:40:55,822 - centrality - INFO - Graph statistics computation completed
+2025-08-18 13:40:55,822 - centrality - INFO - Computing comprehensive graph statistics...
+2025-08-18 13:40:55,823 - centrality - INFO - Graph connectivity: False, Components: 3
+2025-08-18 13:40:55,833 - centrality - INFO - Using largest component with 398 nodes for centrality calculations
+2025-08-18 13:40:55,970 - centrality - WARNING - Failed to compute betweenness centrality: this function got an unexpected keyword argument 'normalized'
+2025-08-18 13:40:56,510 - centrality - INFO - Graph statistics computation completed
+2025-08-18 13:40:56,511 - __main__ - INFO - Comparison statistics generated
+2025-08-18 13:40:56,511 - __main__ - INFO - ============================================================
+2025-08-18 13:40:56,511 - __main__ - INFO - ANALYSIS COMPLETED SUCCESSFULLY
+2025-08-18 13:40:56,511 - __main__ - INFO - ============================================================
