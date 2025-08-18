@@ -2,6 +2,7 @@ from shapely.geometry import Point, LineString
 import geopandas as gpd
 import logging
 import os
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -154,4 +155,48 @@ def remove_long_edges(G, max_distance, weight_attr="weight"):
         logger.info("No edges to remove")
 
     return G
+
+
+def remove_random_stations(G, num_remove, seed=None):
+    """
+    Remove n random stations from the graph.
+    
+    Args:
+        G: igraph Graph object
+        num_remove: Number of stations to remove
+        seed: Random seed for reproducibility (optional)
+        
+    Returns:
+        Modified graph with random stations removed
+    """
+    logger.info(f"Removing {num_remove} random stations from graph")
+    
+    if seed is not None:
+        random.seed(seed)
+        logger.debug(f"Using random seed: {seed}")
+    
+    initial_length = G.vcount()
+    logger.debug(f"Initial graph size: {initial_length} nodes")
+    
+    if num_remove >= initial_length:
+        logger.error(f"Cannot remove {num_remove} stations from graph with only {initial_length} nodes")
+        raise ValueError(f"num_remove ({num_remove}) must be less than total nodes ({initial_length})")
+    
+    # Get all node indices
+    all_nodes = list(range(initial_length))
+    
+    # Randomly select nodes to remove
+    nodes_to_remove = random.sample(all_nodes, num_remove)
+    nodes_to_remove.sort()  # Sort for consistent logging
+    
+    logger.info(f"Selected {len(nodes_to_remove)} random nodes for removal: {nodes_to_remove[:10]}{'...' if len(nodes_to_remove) > 10 else ''}")
+    
+    # Remove them from the graph
+    G.delete_vertices(nodes_to_remove)
+    
+    assert num_remove > 0
+    assert initial_length - G.vcount() == num_remove
+    
+    logger.info(f"Random station removal completed: {initial_length} → {G.vcount()} nodes")
+    
     return G

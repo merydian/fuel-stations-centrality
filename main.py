@@ -4,6 +4,7 @@ from centrality import farness_centrality, get_graph_stats, compare_graph_stats
 from utils import (
     graph_to_gdf,
     filter_graph_stations,
+    remove_random_stations,
     save_graph_to_geopackage,
     remove_long_edges,
 )
@@ -107,6 +108,23 @@ def main():
         
         logger.info("Filtered graph creation completed")
 
+        # Step 7b: Create random comparison graph
+        logger.info("STEP 7b: Creating random comparison graph...")
+        
+        logger.info("Removing random stations for comparison...")
+        G_random = remove_random_stations(G.copy(), n_remove, seed=42)  # Use seed for reproducibility
+        
+        logger.info("Converting random graph to GeoDataFrame...")
+        dgf_random = graph_to_gdf(G_random)
+        
+        logger.info("Creating new graph from random stations...")
+        G_random_newly_calculated = make_graph_from_stations(
+            dgf_random, api_key=os.getenv("ORS_API_KEY")
+        )
+        G_random_newly_calculated = remove_long_edges(G_random_newly_calculated, MAX_DISTANCE)
+        
+        logger.info("Random comparison graph creation completed")
+
         # Step 8: Calculate farness for filtered graph
         logger.info("STEP 8: Computing farness centrality for filtered graph...")
         
@@ -115,6 +133,15 @@ def main():
         )
         
         logger.info("Filtered graph farness computation completed")
+
+        # Step 8b: Calculate farness for random comparison graph
+        logger.info("STEP 8b: Computing farness centrality for random comparison graph...")
+        
+        G_random_newly_calculated, farness_random_newly_calculated = farness_centrality(
+            G_random_newly_calculated, weight="weight"
+        )
+        
+        logger.info("Random comparison graph farness computation completed")
 
         # Step 9: Save filtered graph
         logger.info("STEP 9: Saving filtered graph...")
@@ -127,18 +154,44 @@ def main():
         
         logger.info("Filtered graph saved successfully")
 
+        # Step 9b: Save random comparison graph
+        logger.info("STEP 9b: Saving random comparison graph...")
+        
+        save_graph_to_geopackage(
+            G_random_newly_calculated, 
+            farness=farness_random_newly_calculated, 
+            out_file="fuel_stations_random.gpkg"
+        )
+        
+        logger.info("Random comparison graph saved successfully")
+
         # Step 10: Generate comparison
         logger.info("STEP 10: Generating comparison statistics...")
         
         new_stats = get_graph_stats(G_fareness_removed)
-        comparison = compare_graph_stats(old_stats, new_stats, 
-                                       title1="Original Graph", 
-                                       title2="Filtered Graph")
+        random_stats = get_graph_stats(G_random_newly_calculated)
+        
+        # Compare farness-based filtering vs original
+        farness_comparison = compare_graph_stats(old_stats, new_stats, 
+                                               title1="Original Graph", 
+                                               title2="Farness-Filtered Graph")
+        
+        # Compare random removal vs original
+        random_comparison = compare_graph_stats(old_stats, random_stats,
+                                              title1="Original Graph",
+                                              title2="Random-Filtered Graph")
+        
+        # Compare farness-based vs random removal
+        method_comparison = compare_graph_stats(new_stats, random_stats,
+                                              title1="Farness-Filtered Graph",
+                                              title2="Random-Filtered Graph")
         
         logger.info("Comparison statistics generated")
 
         # Print results
-        print(comparison)
+        print(farness_comparison)
+        print(random_comparison)
+        print(method_comparison)
         
         logger.info("="*60)
         logger.info("ANALYSIS COMPLETED SUCCESSFULLY")
