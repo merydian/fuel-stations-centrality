@@ -1,109 +1,159 @@
-import networkx as nx
+import igraph as ig
 import osmnx as ox
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 def farness_centrality(G, weight=None):
+    logger.info(f"Computing farness centrality for graph with {G.vcount()} nodes and {G.ecount()} edges")
+    
     # Compute farness and normalized farness for each node
     farness = {}
     norm_farness = {}
-    n = G.number_of_nodes()
-    for node in G.nodes:
-        # Shortest path lengths from this node to all others
-        lengths = nx.single_source_dijkstra_path_length(G, node, weight="weight")
+    n = G.vcount()
+    
+    logger.debug(f"Using weight attribute: {weight}")
+    
+    # Use igraph's shortest path distances
+    logger.info("Calculating shortest path distances matrix...")
+    distances = G.distances(weights=weight)
+    logger.info("Distance matrix calculation completed")
+    
+    for i in range(n):
         # Sum of distances to all reachable nodes except itself
-        total_dist = sum(dist for target, dist in lengths.items() if target != node)
-        farness[node] = total_dist
+        total_dist = sum(dist for j, dist in enumerate(distances[i]) if i != j and dist != float('inf'))
+        farness[i] = total_dist
         # Normalize by number of reachable nodes minus one (excluding itself)
-        reachable = len(lengths) - 1
-        norm_farness[node] = total_dist / reachable if reachable > 0 else 0
+        reachable = sum(1 for dist in distances[i] if dist != float('inf')) - 1
+        norm_farness[i] = total_dist / reachable if reachable > 0 else 0
+        
+        if i % max(1, n // 10) == 0:  # Log progress every 10%
+            logger.debug(f"Processed {i}/{n} nodes ({100*i/n:.1f}%)")
 
-    # Add as node attributes
-    nx.set_node_attributes(G, farness, name="farness")
-    nx.set_node_attributes(G, norm_farness, name="norm_farness")
+    # Add as vertex attributes
+    G.vs["farness"] = [farness.get(i, 0) for i in range(n)]
+    G.vs["norm_farness"] = [norm_farness.get(i, 0) for i in range(n)]
+    
+    logger.info(f"Farness centrality computation completed. "
+               f"Avg farness: {np.mean(list(farness.values())):.2f}, "
+               f"Max farness: {max(farness.values()):.2f}")
 
     return G, farness
 
 def download_graph(place):
-    # Download the street network for the given place
-    G = ox.graph_from_place(place, network_type="drive")
-    return G
+    logger.info(f"Downloading street network for: {place}")
+    try:
+        # Download the street network for the given place and convert to igraph
+        G_nx = ox.graph_from_place(place, network_type="drive")
+        logger.info(f"Downloaded NetworkX graph with {len(G_nx.nodes)} nodes and {len(G_nx.edges)} edges")
+        
+        # Convert NetworkX to igraph
+        logger.info("Converting NetworkX graph to igraph...")
+        G = ig.Graph.from_networkx(G_nx)
+        logger.info(f"Conversion completed. igraph has {G.vcount()} vertices and {G.ecount()} edges")
+        
+        return G
+    except Exception as e:
+        logger.error(f"Failed to download graph for {place}: {e}")
+        raise
 
 def get_graph_stats(G):
+    logger.info("Computing comprehensive graph statistics...")
     stats = {}
     
     # Basic graph statistics
-    stats['num_nodes'] = {'value': G.number_of_nodes(), 'unit': 'count'}
-    stats['num_edges'] = {'value': G.number_of_edges(), 'unit': 'count'}
+    stats['num_nodes'] = {'value': G.vcount(), 'unit': 'count'}
+    stats['num_edges'] = {'value': G.ecount(), 'unit': 'count'}
+    logger.debug(f"Basic stats: {stats['num_nodes']['value']} nodes, {stats['num_edges']['value']} edges")
     
-    # Check connectivity based on graph type
-    if G.is_directed():
-        stats['is_connected'] = {'value': nx.is_weakly_connected(G), 'unit': 'boolean'}
-        stats['num_components'] = {'value': nx.number_weakly_connected_components(G), 'unit': 'count'}
-    else:
-        stats['is_connected'] = {'value': nx.is_connected(G), 'unit': 'boolean'}
-        stats['num_components'] = {'value': nx.number_connected_components(G), 'unit': 'count'}
+    # Check connectivity
+    is_connected = G.is_connected(mode="weak")
+    stats['is_connected'] = {'value': is_connected, 'unit': 'boolean'}
+    components = G.connected_components(mode="weak")
+    stats['num_components'] = {'value': len(components), 'unit': 'count'}
+    logger.info(f"Graph connectivity: {is_connected}, Components: {len(components)}")
     
     # Density
-    stats['density'] = {'value': nx.density(G), 'unit': 'ratio'}
+    stats['density'] = {'value': G.density(), 'unit': 'ratio'}
     
     # Average degree
-    degrees = dict(G.degree())
-    stats['avg_degree'] = {'value': np.mean(list(degrees.values())), 'unit': 'connections'}
-    stats['max_degree'] = {'value': max(degrees.values()), 'unit': 'connections'}
-    stats['min_degree'] = {'value': min(degrees.values()), 'unit': 'connections'}
+    degrees = G.degree()
+    stats['avg_degree'] = {'value': np.mean(degrees), 'unit': 'connections'}
+    stats['max_degree'] = {'value': max(degrees), 'unit': 'connections'}
+    stats['min_degree'] = {'value': min(degrees), 'unit': 'connections'}
+    logger.debug(f"Degree stats - Avg: {stats['avg_degree']['value']}, Max: {stats['max_degree']['value']}, Min: {stats['min_degree']['value']}")
     
     # Centrality measures (for largest connected component if graph is disconnected)
-    if G.is_directed():
-        if nx.is_weakly_connected(G):
-            largest_cc = G
-        else:
-            largest_cc = G.subgraph(max(nx.weakly_connected_components(G), key=len))
+    if is_connected:
+        largest_cc = G
+        logger.info("Using entire graph for centrality calculations (graph is connected)")
     else:
-        if nx.is_connected(G):
-            largest_cc = G
-        else:
-            largest_cc = G.subgraph(max(nx.connected_components(G), key=len))
+        largest_component = max(components, key=len)
+        largest_cc = G.subgraph(largest_component)
+        logger.info(f"Using largest component with {largest_cc.vcount()} nodes for centrality calculations")
     
     # Degree centrality
-    degree_centrality = nx.degree_centrality(largest_cc)
-    stats['avg_degree_centrality'] = {'value': np.mean(list(degree_centrality.values())), 'unit': 'normalized ratio'}
+    logger.debug("Computing degree centrality...")
+    degree_centrality = largest_cc.degree()
+    max_possible_degree = largest_cc.vcount() - 1
+    normalized_degree_centrality = [d / max_possible_degree for d in degree_centrality] if max_possible_degree > 0 else [0] * largest_cc.vcount()
+    stats['avg_degree_centrality'] = {'value': np.mean(normalized_degree_centrality), 'unit': 'normalized ratio'}
     
     # Closeness centrality
-    closeness_centrality = nx.closeness_centrality(largest_cc, distance='weight')
-    stats['avg_closeness_centrality'] = {'value': np.mean(list(closeness_centrality.values())), 'unit': 'normalized ratio'}
+    logger.debug("Computing closeness centrality...")
+    try:
+        closeness_centrality = largest_cc.closeness(weights='weight', normalized=True)
+        stats['avg_closeness_centrality'] = {'value': np.mean(closeness_centrality), 'unit': 'normalized ratio'}
+    except Exception as e:
+        logger.warning(f"Failed to compute closeness centrality: {e}")
+        stats['avg_closeness_centrality'] = {'value': "Could not compute", 'unit': 'n/a'}
     
     # Betweenness centrality (can be slow for large graphs)
-    if largest_cc.number_of_nodes() < 1000:  # Only compute for smaller graphs
-        betweenness_centrality = nx.betweenness_centrality(largest_cc, weight='weight')
-        stats['avg_betweenness_centrality'] = {'value': np.mean(list(betweenness_centrality.values())), 'unit': 'normalized ratio'}
+    if largest_cc.vcount() < 1000:
+        logger.debug("Computing betweenness centrality...")
+        try:
+            betweenness_centrality = largest_cc.betweenness(weights='weight', normalized=True)
+            stats['avg_betweenness_centrality'] = {'value': np.mean(betweenness_centrality), 'unit': 'normalized ratio'}
+        except Exception as e:
+            logger.warning(f"Failed to compute betweenness centrality: {e}")
+            stats['avg_betweenness_centrality'] = {'value': "Could not compute", 'unit': 'n/a'}
     else:
+        logger.info(f"Skipping betweenness centrality (graph too large: {largest_cc.vcount()} nodes)")
         stats['avg_betweenness_centrality'] = {'value': "Skipped (graph too large)", 'unit': 'n/a'}
     
     # Eigenvector centrality (only for connected graphs)
-    is_connected_check = nx.is_weakly_connected(largest_cc) if G.is_directed() else nx.is_connected(largest_cc)
-    if is_connected_check:
+    if largest_cc.is_connected(mode="weak"):
+        logger.debug("Computing eigenvector centrality...")
         try:
-            eigenvector_centrality = nx.eigenvector_centrality(largest_cc, weight='weight')
-            stats['avg_eigenvector_centrality'] = {'value': np.mean(list(eigenvector_centrality.values())), 'unit': 'normalized ratio'}
-        except:
+            eigenvector_centrality = largest_cc.eigenvector_centrality(weights='weight')
+            stats['avg_eigenvector_centrality'] = {'value': np.mean(eigenvector_centrality), 'unit': 'normalized ratio'}
+        except Exception as e:
+            logger.warning(f"Failed to compute eigenvector centrality: {e}")
             stats['avg_eigenvector_centrality'] = {'value': "Could not compute", 'unit': 'n/a'}
     else:
+        logger.info("Skipping eigenvector centrality (largest component not connected)")
         stats['avg_eigenvector_centrality'] = {'value': "Graph not connected", 'unit': 'n/a'}
     
     # Farness centrality (if available)
-    farness_values = [data.get('farness', 0) for node, data in G.nodes(data=True) if 'farness' in data]
-    if farness_values:
+    if 'farness' in G.vs.attributes():
+        logger.debug("Processing farness centrality statistics...")
+        farness_values = G.vs['farness']
         stats['avg_farness'] = {'value': np.mean(farness_values), 'unit': 'meters'}
         stats['max_farness'] = {'value': max(farness_values), 'unit': 'meters'}
         stats['min_farness'] = {'value': min(farness_values), 'unit': 'meters'}
+    else:
+        logger.debug("No farness centrality data found")
     
     # Normalized farness centrality (if available)
-    norm_farness_values = [data.get('norm_farness', 0) for node, data in G.nodes(data=True) if 'norm_farness' in data]
-    if norm_farness_values:
+    if 'norm_farness' in G.vs.attributes():
+        logger.debug("Processing normalized farness centrality statistics...")
+        norm_farness_values = G.vs['norm_farness']
         stats['avg_norm_farness'] = {'value': np.mean(norm_farness_values), 'unit': 'meters/node'}
         stats['max_norm_farness'] = {'value': max(norm_farness_values), 'unit': 'meters/node'}
         stats['min_norm_farness'] = {'value': min(norm_farness_values), 'unit': 'meters/node'}
     
+    logger.info("Graph statistics computation completed")
     return stats
 
 def format_graph_stats(stats, title="Graph Statistics"):
