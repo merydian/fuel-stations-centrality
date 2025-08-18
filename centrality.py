@@ -35,7 +35,7 @@ def farness_centrality(G, weight=None):
     G.vs["farness"] = [farness.get(i, 0) for i in range(n)]
     G.vs["norm_farness"] = [norm_farness.get(i, 0) for i in range(n)]
     
-    logger.info(f"Farness centrality computation completed. "
+    logger.info(f"Farness centrality computation completed - "
                f"Avg farness: {np.mean(list(farness.values())):.2f}, "
                f"Max farness: {max(farness.values()):.2f}")
 

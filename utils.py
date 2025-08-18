@@ -63,9 +63,8 @@ def save_graph_to_geopackage(G, farness=None, out_file="graph.gpkg"):
     # --- Save to GPKG ---
     output_path = f"{output_dir}/{out_file}"
     try:
-        logger.info(f"Writing nodes layer to {output_path}...")
+        logger.info(f"Writing graph data to {output_path}...")
         gdf_nodes.to_file(output_path, layer="nodes", driver="GPKG")
-        logger.info(f"Writing edges layer to {output_path}...")
         gdf_edges.to_file(output_path, layer="edges", driver="GPKG")
         logger.info(f"Successfully saved graph to {output_path}")
     except Exception as e:
@@ -154,4 +153,5 @@ def remove_long_edges(G, max_distance, weight_attr="weight"):
     else:
         logger.info("No edges to remove")
 
+    return G
     return G
