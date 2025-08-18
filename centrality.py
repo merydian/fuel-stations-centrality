@@ -58,6 +58,96 @@ def download_graph(place):
         logger.error(f"Failed to download graph for {place}: {e}")
         raise
 
+def straightness_centrality(g: ig.Graph, weight: str = "length"):
+    """
+    Compute straightness centrality for all nodes in a graph.
+
+    Parameters
+    ----------
+    g : ig.Graph
+        Road network graph (undirected or directed). Each node must
+        have attributes "x" and "y".
+    weight : str
+        Edge attribute to use as distance (default = "length").
+
+    Returns
+    -------
+    straightness : list of floats
+        Straightness centrality for each node.
+    """
+    n = g.vcount()
+    straightness = [0.0] * n
+
+    # Extract node coordinates from attributes
+    coords = {v.index: (v["x"], v["y"]) for v in g.vs}
+
+    # Precompute all shortest path lengths
+    dG = g.shortest_paths_dijkstra(weights=weight)
+
+    for i in range(n):
+        si = 0
+        valid = 0
+        xi, yi = coords[i]
+        for j in range(n):
+            if i == j:
+                continue
+            d_g = dG[i][j]
+            if d_g == float("inf"):
+                continue  # disconnected
+            xj, yj = coords[j]
+            d_e = np.hypot(xi - xj, yi - yj)
+            if d_e > 0:
+                si += d_e / d_g
+                valid += 1
+        straightness[i] = si / valid if valid > 0 else 0.0
+
+    return straightness
+
+
+def graph_straightness(g: ig.Graph, weight: str = "length"):
+    """
+    Compute global straightness centrality for a graph.
+    
+    Parameters
+    ----------
+    g : ig.Graph
+        Road network graph (undirected or directed). Each node must
+        have attributes "x" and "y".
+    weight : str
+        Edge attribute to use as distance (default = "length").
+
+    Returns
+    -------
+    float
+        Global straightness centrality (graph-level detour index).
+    """
+    n = g.vcount()
+    
+    # Extract node coordinates
+    coords = {v.index: (v["x"], v["y"]) for v in g.vs}
+    
+    # All-pairs shortest paths
+    dG = g.shortest_paths_dijkstra(weights=weight)
+    
+    num, den = 0.0, 0
+    
+    for i in range(n):
+        xi, yi = coords[i]
+        for j in range(n):
+            if i == j:
+                continue
+            d_g = dG[i][j]
+            if d_g == float("inf"):
+                continue  # disconnected pair
+            xj, yj = coords[j]
+            d_e = np.hypot(xi - xj, yi - yj)
+            if d_e > 0:
+                num += d_e / d_g
+                den += 1
+    
+    return num / den if den > 0 else 0.0
+
+
 def get_graph_stats(G):
     logger.info("Computing comprehensive graph statistics...")
     stats = {}
@@ -135,6 +225,40 @@ def get_graph_stats(G):
         logger.info("Skipping eigenvector centrality (largest component not connected)")
         stats['avg_eigenvector_centrality'] = {'value': "Graph not connected", 'unit': 'n/a'}
     
+    # Straightness centrality and global straightness
+    if largest_cc.vcount() < 2000:  # Skip for very large graphs due to computational complexity
+        logger.debug("Computing straightness measures...")
+        try:
+            # Check if nodes have coordinate attributes
+            if 'coord' in largest_cc.vs.attributes():
+                # Extract x, y coordinates from coord attribute
+                for i, v in enumerate(largest_cc.vs):
+                    coord = v['coord']
+                    v['x'] = coord[0]  # longitude
+                    v['y'] = coord[1]  # latitude
+                    
+                straightness_values = straightness_centrality(largest_cc, weight='weight')
+                stats['avg_straightness_centrality'] = {'value': np.mean(straightness_values), 'unit': 'ratio'}
+                stats['max_straightness_centrality'] = {'value': max(straightness_values), 'unit': 'ratio'}
+                stats['min_straightness_centrality'] = {'value': min(straightness_values), 'unit': 'ratio'}
+                
+                # Global straightness
+                global_straightness = graph_straightness(largest_cc, weight='weight')
+                stats['global_straightness'] = {'value': global_straightness, 'unit': 'ratio'}
+                
+            else:
+                logger.warning("No coordinate data found for straightness centrality")
+                stats['avg_straightness_centrality'] = {'value': "No coordinate data", 'unit': 'n/a'}
+                stats['global_straightness'] = {'value': "No coordinate data", 'unit': 'n/a'}
+        except Exception as e:
+            logger.warning(f"Failed to compute straightness measures: {e}")
+            stats['avg_straightness_centrality'] = {'value': "Could not compute", 'unit': 'n/a'}
+            stats['global_straightness'] = {'value': "Could not compute", 'unit': 'n/a'}
+    else:
+        logger.info(f"Skipping straightness measures (graph too large: {largest_cc.vcount()} nodes)")
+        stats['avg_straightness_centrality'] = {'value': "Skipped (graph too large)", 'unit': 'n/a'}
+        stats['global_straightness'] = {'value': "Skipped (graph too large)", 'unit': 'n/a'}
+    
     # Farness centrality (if available)
     if 'farness' in G.vs.attributes():
         logger.debug("Processing farness centrality statistics...")
@@ -200,6 +324,23 @@ def format_graph_stats(stats, title="Graph Statistics"):
         lines.append(f"  Avg Eigenvector Centrality: {stats['avg_eigenvector_centrality']['value']} ({stats['avg_eigenvector_centrality']['unit']})")
     else:
         lines.append(f"  Avg Eigenvector Centrality: {stats['avg_eigenvector_centrality']['value']:.6f} ({stats['avg_eigenvector_centrality']['unit']})")
+    
+    # Straightness Measures
+    if 'avg_straightness_centrality' in stats:
+        lines.append("\nStraightness Measures:")
+        if isinstance(stats['avg_straightness_centrality']['value'], str):
+            lines.append(f"  Avg Straightness Centrality: {stats['avg_straightness_centrality']['value']} ({stats['avg_straightness_centrality']['unit']})")
+        else:
+            lines.append(f"  Avg Straightness Centrality: {stats['avg_straightness_centrality']['value']:.6f} ({stats['avg_straightness_centrality']['unit']})")
+            if 'max_straightness_centrality' in stats:
+                lines.append(f"    Maximum: {stats['max_straightness_centrality']['value']:.6f} {stats['max_straightness_centrality']['unit']}")
+                lines.append(f"    Minimum: {stats['min_straightness_centrality']['value']:.6f} {stats['min_straightness_centrality']['unit']}")
+        
+        if 'global_straightness' in stats:
+            if isinstance(stats['global_straightness']['value'], str):
+                lines.append(f"  Global Straightness: {stats['global_straightness']['value']} ({stats['global_straightness']['unit']})")
+            else:
+                lines.append(f"  Global Straightness: {stats['global_straightness']['value']:.6f} ({stats['global_straightness']['unit']})")
     
     # Farness Statistics (if available)
     if 'avg_farness' in stats:
@@ -297,7 +438,8 @@ def compare_graph_stats(stats1, stats2, title1="Graph 1", title2="Graph 2"):
     # Centrality Measures
     lines.append("\nCentrality Measures:")
     centrality_stats = ['avg_degree_centrality', 'avg_closeness_centrality', 
-                       'avg_betweenness_centrality', 'avg_eigenvector_centrality']
+                       'avg_betweenness_centrality', 'avg_eigenvector_centrality',
+                       'avg_straightness_centrality']
     
     for stat in centrality_stats:
         if stat in stats1 and stat in stats2:
@@ -308,6 +450,30 @@ def compare_graph_stats(stats1, stats2, title1="Graph 1", title2="Graph 2"):
             stat_name = stat.replace('_', ' ').replace('avg ', '').title()
             lines.append(f"  {stat_name}:")
             lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
+    
+    # Global Straightness
+    if 'global_straightness' in stats1 and 'global_straightness' in stats2:
+        val1_str = format_value(stats1['global_straightness'], 6)
+        val2_str = format_value(stats2['global_straightness'], 6)
+        change = calc_change(stats1['global_straightness']['value'], stats2['global_straightness']['value'])
+        
+        lines.append(f"  Global Straightness:")
+        lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
+    
+    # Straightness Statistics (if available)
+    straightness_stats = ['avg_straightness_centrality', 'max_straightness_centrality', 'min_straightness_centrality']
+    if any(stat in stats1 and stat in stats2 for stat in straightness_stats):
+        lines.append("\nStraightness Centrality:")
+        
+        for stat in straightness_stats:
+            if stat in stats1 and stat in stats2:
+                val1_str = format_value(stats1[stat], 6)
+                val2_str = format_value(stats2[stat], 6)
+                change = calc_change(stats1[stat]['value'], stats2[stat]['value'])
+                
+                stat_name = stat.replace('_', ' ').replace('avg ', '').title()
+                lines.append(f"  {stat_name}:")
+                lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
     
     # Farness Statistics (if available)
     farness_stats = ['avg_farness', 'max_farness', 'min_farness']
