@@ -1,5 +1,6 @@
 import logging
-from centrality import farness_centrality, get_graph_stats, compare_graph_stats
+from centrality import farness_centrality
+from stats import get_graph_stats, compare_graph_stats
 
 from utils import (
     graph_to_gdf,
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     place = "Luxembourg"
-    MAX_DISTANCE = 500000  # meters
+    MAX_DISTANCE = 200000  # meters
     n_remove = 50
     
     logger.info("="*60)
