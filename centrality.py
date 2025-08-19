@@ -5,6 +5,9 @@ import logging
 from shapely.geometry import Point, MultiPoint
 from shapely.ops import transform
 import pyproj
+from scipy.spatial import Voronoi
+from shapely.geometry import Polygon
+import geopandas as gpd
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +154,7 @@ def graph_straightness(g: ig.Graph, weight: str = "length"):
     return num / den if den > 0 else 0.0
 
 
-def get_graph_stats(G):
+def get_graph_stats(G, base_convex_hull=None):
     logger.info("Computing comprehensive graph statistics...")
     stats = {}
     
@@ -177,7 +180,7 @@ def get_graph_stats(G):
     stats['min_degree'] = {'value': min(degrees), 'unit': 'connections'}
     logger.debug(f"Degree stats - Avg: {stats['avg_degree']['value']}, Max: {stats['max_degree']['value']}, Min: {stats['min_degree']['value']}")
     
-    # Convex hull area
+    # Convex hull area and Voronoi analysis
     if 'coord' in G.vs.attributes() and G.vcount() >= 3:
         logger.debug("Computing convex hull area...")
         try:
@@ -185,9 +188,17 @@ def get_graph_stats(G):
             coords = [G.vs[i]['coord'] for i in range(G.vcount())]
             points = [Point(coord[0], coord[1]) for coord in coords]  # lon, lat
             
-            # Create MultiPoint geometry
+            # Create MultiPoint geometry for current graph
             multipoint = MultiPoint(points)
-            convex_hull = multipoint.convex_hull
+            current_convex_hull = multipoint.convex_hull
+            
+            # Use base convex hull if provided, otherwise use current
+            if base_convex_hull is not None:
+                convex_hull = base_convex_hull
+                logger.debug("Using provided base convex hull for calculations")
+            else:
+                convex_hull = current_convex_hull
+                logger.debug("Using current graph convex hull for calculations")
             
             # Transform to appropriate UTM zone for area calculation
             # Use the centroid to determine UTM zone
@@ -208,10 +219,88 @@ def get_graph_stats(G):
             
             logger.debug(f"Convex hull area: {area_km2:.2f} km²")
             
+            # Voronoi diagram analysis
+            if G.vcount() >= 4:  # Need at least 4 points for meaningful Voronoi
+                logger.debug("Computing Voronoi diagram...")
+                try:
+                    # Create Voronoi diagram in geographic coordinates
+                    coords_array = np.array(coords)
+                    vor = Voronoi(coords_array)
+                    
+                    # Use base convex hull for clipping Voronoi polygons
+                    clip_hull = base_convex_hull if base_convex_hull is not None else current_convex_hull
+                    voronoi_areas = []
+                    voronoi_polygons = []
+                    
+                    for i, point_idx in enumerate(range(len(coords))):
+                        # Get Voronoi cell vertices for this point
+                        region_idx = vor.point_region[point_idx]
+                        vertex_indices = vor.regions[region_idx]
+                        
+                        if -1 not in vertex_indices and len(vertex_indices) > 0:
+                            # Valid finite region
+                            polygon_coords = [vor.vertices[j] for j in vertex_indices]
+                            voronoi_poly = Polygon(polygon_coords)
+                            
+                            # Clip by base convex hull (always from original stations)
+                            clipped_poly = voronoi_poly.intersection(clip_hull)
+                            
+                            if not clipped_poly.is_empty and clipped_poly.geom_type == 'Polygon':
+                                # Transform to UTM for area calculation
+                                clipped_poly_utm = transform(transformer.transform, clipped_poly)
+                                area_m2_poly = clipped_poly_utm.area
+                                voronoi_areas.append(area_m2_poly)
+                                voronoi_polygons.append(clipped_poly)
+                            else:
+                                voronoi_areas.append(0.0)
+                                voronoi_polygons.append(None)
+                        else:
+                            # Infinite region or invalid
+                            voronoi_areas.append(0.0)
+                            voronoi_polygons.append(None)
+                    
+                    # Store Voronoi polygons in graph for later saving
+                    G['voronoi_polygons'] = voronoi_polygons
+                    G['voronoi_convex_hull'] = clip_hull  # Store the hull used for clipping
+                    G['base_convex_hull'] = base_convex_hull  # Store original base hull reference
+                    
+                    # Calculate statistics
+                    valid_areas = [area for area in voronoi_areas if area > 0]
+                    if valid_areas:
+                        avg_voronoi_area_m2 = np.mean(valid_areas)
+                        avg_voronoi_area_km2 = avg_voronoi_area_m2 / 1_000_000
+                        max_voronoi_area_m2 = max(valid_areas)
+                        min_voronoi_area_m2 = min(valid_areas)
+                        
+                        stats['avg_voronoi_area_m2'] = {'value': avg_voronoi_area_m2, 'unit': 'square meters'}
+                        stats['avg_voronoi_area_km2'] = {'value': avg_voronoi_area_km2, 'unit': 'square kilometers'}
+                        stats['max_voronoi_area_m2'] = {'value': max_voronoi_area_m2, 'unit': 'square meters'}
+                        stats['min_voronoi_area_m2'] = {'value': min_voronoi_area_m2, 'unit': 'square meters'}
+                        stats['num_valid_voronoi'] = {'value': len(valid_areas), 'unit': 'count'}
+                        
+                        logger.debug(f"Voronoi analysis: {len(valid_areas)} valid polygons, "
+                                   f"avg area: {avg_voronoi_area_km2:.2f} km² "
+                                   f"(clipped by {'base' if base_convex_hull is not None else 'current'} convex hull)")
+                    else:
+                        logger.warning("No valid Voronoi polygons found")
+                        stats['avg_voronoi_area_m2'] = {'value': "No valid polygons", 'unit': 'n/a'}
+                        stats['avg_voronoi_area_km2'] = {'value': "No valid polygons", 'unit': 'n/a'}
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to compute Voronoi diagram: {e}")
+                    stats['avg_voronoi_area_m2'] = {'value': "Could not compute", 'unit': 'n/a'}
+                    stats['avg_voronoi_area_km2'] = {'value': "Could not compute", 'unit': 'n/a'}
+            else:
+                logger.debug("Insufficient nodes for Voronoi diagram")
+                stats['avg_voronoi_area_m2'] = {'value': "Insufficient nodes", 'unit': 'n/a'}
+                stats['avg_voronoi_area_km2'] = {'value': "Insufficient nodes", 'unit': 'n/a'}
+            
         except Exception as e:
             logger.warning(f"Failed to compute convex hull area: {e}")
             stats['convex_hull_area_m2'] = {'value': "Could not compute", 'unit': 'n/a'}
             stats['convex_hull_area_km2'] = {'value': "Could not compute", 'unit': 'n/a'}
+            stats['avg_voronoi_area_m2'] = {'value': "Could not compute", 'unit': 'n/a'}
+            stats['avg_voronoi_area_km2'] = {'value': "Could not compute", 'unit': 'n/a'}
     else:
         if G.vcount() < 3:
             logger.debug("Insufficient nodes for convex hull calculation")
@@ -360,6 +449,18 @@ def format_graph_stats(stats, title="Graph Statistics"):
         else:
             lines.append(f"  Convex Hull Area: {stats['convex_hull_area_km2']['value']:,.2f} {stats['convex_hull_area_km2']['unit']}")
             lines.append(f"    ({stats['convex_hull_area_m2']['value']:,.0f} {stats['convex_hull_area_m2']['unit']})")
+        
+        # Voronoi statistics
+        if 'avg_voronoi_area_km2' in stats:
+            if isinstance(stats['avg_voronoi_area_km2']['value'], str):
+                lines.append(f"  Avg Voronoi Area: {stats['avg_voronoi_area_km2']['value']} ({stats['avg_voronoi_area_km2']['unit']})")
+            else:
+                lines.append(f"  Avg Voronoi Area: {stats['avg_voronoi_area_km2']['value']:,.2f} {stats['avg_voronoi_area_km2']['unit']}")
+                if 'max_voronoi_area_m2' in stats:
+                    lines.append(f"    Maximum: {stats['max_voronoi_area_m2']['value']:,.0f} {stats['max_voronoi_area_m2']['unit']}")
+                    lines.append(f"    Minimum: {stats['min_voronoi_area_m2']['value']:,.0f} {stats['min_voronoi_area_m2']['unit']}")
+                if 'num_valid_voronoi' in stats:
+                    lines.append(f"    Valid polygons: {stats['num_valid_voronoi']['value']} {stats['num_valid_voronoi']['unit']}")
     
     # Degree Statistics
     lines.append("\nDegree Statistics:")
@@ -487,6 +588,15 @@ def compare_graph_stats(stats1, stats2, title1="Graph 1", title2="Graph 2"):
         
         lines.append(f"  Convex Hull Area:")
         lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
+        
+        # Voronoi area comparison
+        if 'avg_voronoi_area_km2' in stats1 and 'avg_voronoi_area_km2' in stats2:
+            val1_str = format_value(stats1['avg_voronoi_area_km2'], 2)
+            val2_str = format_value(stats2['avg_voronoi_area_km2'], 2)
+            change = calc_change(stats1['avg_voronoi_area_km2']['value'], stats2['avg_voronoi_area_km2']['value'])
+            
+            lines.append(f"  Avg Voronoi Area:")
+            lines.append(f"    {val1_str:<30} → {val2_str:<30} ({change})")
     
     # Degree Statistics
     lines.append("\nDegree Statistics:")

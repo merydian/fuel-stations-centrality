@@ -6,6 +6,7 @@ from utils import (
     filter_graph_stations,
     remove_random_stations,
     save_graph_to_geopackage,
+    save_voronoi_to_geopackage,
     remove_long_edges,
 )
 from ors_router import make_graph_from_stations
@@ -63,6 +64,20 @@ def main():
         
         logger.info("Initial graph created successfully")
 
+        # Step 2.1: Extract and store the original convex hull for consistent clipping
+        logger.info("STEP 2.1: Computing base convex hull for consistent Voronoi clipping...")
+        
+        try:
+            from shapely.geometry import Point, MultiPoint
+            coords = [G.vs[i]['coord'] for i in range(G.vcount())]
+            points = [Point(coord[0], coord[1]) for coord in coords]
+            multipoint = MultiPoint(points)
+            base_convex_hull = multipoint.convex_hull
+            logger.info("Base convex hull computed successfully - will be used for all Voronoi clipping")
+        except Exception as e:
+            logger.warning(f"Failed to compute base convex hull: {e}")
+            base_convex_hull = None
+
         # Step 3: Filter long edges
         logger.info("STEP 3: Filtering long-distance edges...")
         
@@ -77,12 +92,21 @@ def main():
         
         logger.info("Farness centrality computation completed")
 
-        # Step 5: Get initial statistics
+        # Step 5: Get initial statistics (using base convex hull)
         logger.info("STEP 5: Computing initial graph statistics...")
         
-        old_stats = get_graph_stats(G)
+        old_stats = get_graph_stats(G, base_convex_hull=base_convex_hull)
         
         logger.info("Initial statistics computed")
+        
+        # Step 5b: Save Voronoi diagram for initial graph
+        logger.info("STEP 5b: Saving Voronoi diagram for initial graph...")
+        
+        try:
+            save_voronoi_to_geopackage(G, out_file="voronoi_initial.gpkg")
+            logger.info("Initial Voronoi diagram saved successfully")
+        except Exception as e:
+            logger.warning(f"Failed to save initial Voronoi diagram: {e}")
 
         # Step 6: Save initial graph
         logger.info("STEP 6: Saving initial graph to GeoPackage...")
@@ -153,6 +177,17 @@ def main():
         )
         
         logger.info("Filtered graph saved successfully")
+        
+        # Step 9.1: Save Voronoi diagram for filtered graph (using base convex hull)
+        logger.info("STEP 9.1: Saving Voronoi diagram for filtered graph...")
+        
+        try:
+            # Get stats first to generate Voronoi data (with base convex hull)
+            filtered_stats = get_graph_stats(G_fareness_removed, base_convex_hull=base_convex_hull)
+            save_voronoi_to_geopackage(G_fareness_removed, out_file="voronoi_filtered.gpkg")
+            logger.info("Filtered Voronoi diagram saved successfully")
+        except Exception as e:
+            logger.warning(f"Failed to save filtered Voronoi diagram: {e}")
 
         # Step 9b: Save random comparison graph
         logger.info("STEP 9b: Saving random comparison graph...")
@@ -164,12 +199,23 @@ def main():
         )
         
         logger.info("Random comparison graph saved successfully")
+        
+        # Step 9.2: Save Voronoi diagram for random comparison graph (using base convex hull)
+        logger.info("STEP 9.2: Saving Voronoi diagram for random comparison graph...")
+        
+        try:
+            # Get stats first to generate Voronoi data (with base convex hull)
+            random_stats = get_graph_stats(G_random_newly_calculated, base_convex_hull=base_convex_hull)
+            save_voronoi_to_geopackage(G_random_newly_calculated, out_file="voronoi_random.gpkg")
+            logger.info("Random comparison Voronoi diagram saved successfully")
+        except Exception as e:
+            logger.warning(f"Failed to save random comparison Voronoi diagram: {e}")
 
-        # Step 10: Generate comparison
+        # Step 10: Generate comparison (all using base convex hull)
         logger.info("STEP 10: Generating comparison statistics...")
         
-        new_stats = get_graph_stats(G_fareness_removed)
-        random_stats = get_graph_stats(G_random_newly_calculated)
+        new_stats = get_graph_stats(G_fareness_removed, base_convex_hull=base_convex_hull)
+        random_stats = get_graph_stats(G_random_newly_calculated, base_convex_hull=base_convex_hull)
         
         # Compare farness-based filtering vs original
         farness_comparison = compare_graph_stats(old_stats, new_stats, 
@@ -196,11 +242,7 @@ def main():
         logger.info("="*60)
         logger.info("ANALYSIS COMPLETED SUCCESSFULLY")
         logger.info("="*60)
-
-    except Exception as e:
-        logger.error(f"CRITICAL ERROR in analysis pipeline: {e}", exc_info=True)
-        logger.error("Analysis failed - check logs above for details")
-        raise
+        logger.info("Note: All Voronoi diagrams were clipped using the original stations convex hull for consistency")
 
     except Exception as e:
         logger.error(f"CRITICAL ERROR in analysis pipeline: {e}", exc_info=True)
