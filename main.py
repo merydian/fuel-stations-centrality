@@ -9,6 +9,7 @@ from utils import (
     save_graph_to_geopackage,
     save_voronoi_to_geopackage,
     remove_long_edges,
+    remove_disconnected_nodes,
 )
 from ors_router import make_graph_from_stations
 import os
@@ -36,7 +37,8 @@ def main():
     MAX_DISTANCE = 200000  # meters
     n_remove = 50
     n = 5
-    
+    kind = "knn_dist"
+
     logger.info("="*60)
     logger.info("FUEL STATION CENTRALITY ANALYSIS STARTING")
     logger.info("="*60)
@@ -53,7 +55,7 @@ def main():
         # stations = get_fuel_stations(place)
         stations_file = "stations_iran.gpkg"
         logger.info(f"Loading stations from file: {stations_file}")
-        stations = gpd.read_file(stations_file)[:500]
+        stations = gpd.read_file(stations_file)[:250]
 
         logger.info(f"Loaded {len(stations)} fuel stations")
 
@@ -121,7 +123,10 @@ def main():
         logger.info("STEP 7: Filtering stations and creating optimized graph...")
         
         logger.info("Filtering stations based on farness centrality...")
-        G_filtered = filter_graph_stations(G, n_remove)
+        G_filtered = filter_graph_stations(G, n_remove, kind)
+
+        logger.info("STEP 3.1: Removing disconnected nodes...")
+        G = remove_disconnected_nodes(G)
         
         logger.info("Converting filtered graph to GeoDataFrame...")
         dgf_filtered = graph_to_gdf(G_filtered)
@@ -131,6 +136,7 @@ def main():
             dgf_filtered, api_key=os.getenv("ORS_API_KEY")
         )
         G_fareness_removed = remove_long_edges(G_fareness_removed, MAX_DISTANCE)
+        G_fareness_removed = remove_disconnected_nodes(G_fareness_removed)
         
         logger.info("Filtered graph creation completed")
 
@@ -148,6 +154,7 @@ def main():
             dgf_random, api_key=os.getenv("ORS_API_KEY")
         )
         G_random_newly_calculated = remove_long_edges(G_random_newly_calculated, MAX_DISTANCE)
+        G_random_newly_calculated = remove_disconnected_nodes(G_random_newly_calculated)
         
         logger.info("Random comparison graph creation completed")
 
@@ -183,14 +190,6 @@ def main():
         
         # Step 9.1: Save Voronoi diagram for filtered graph (using base convex hull)
         logger.info("STEP 9.1: Saving Voronoi diagram for filtered graph...")
-        
-        try:
-            # Get stats first to generate Voronoi data (with base convex hull)
-            filtered_stats = get_graph_stats(G_fareness_removed, base_convex_hull=base_convex_hull)
-            save_voronoi_to_geopackage(G_fareness_removed, out_file="voronoi_filtered.gpkg")
-            logger.info("Filtered Voronoi diagram saved successfully")
-        except Exception as e:
-            logger.warning(f"Failed to save filtered Voronoi diagram: {e}")
 
         # Step 9b: Save random comparison graph
         logger.info("STEP 9b: Saving random comparison graph...")

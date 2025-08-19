@@ -61,7 +61,7 @@ def get_knn_distance(G, weight=None, k=3):
             logger.debug(f"Processed k-NN for {i}/{n} nodes ({100*i/n:.1f}%)")
     
     # Add as vertex attribute
-    G.vs[f"knn_{k}_dist"] = [knn_distances.get(i, 0) for i in range(n)]
+    G.vs[f"knn_dist"] = [knn_distances.get(i, 0) for i in range(n)]
     
     logger.info(f"k-NN distance computation completed - "
                f"Avg {k}-NN distance: {np.mean(list(knn_distances.values())):.2f}")

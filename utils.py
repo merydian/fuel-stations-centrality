@@ -100,7 +100,7 @@ def graph_to_gdf(G):
     return gdf_nodes
 
 
-def filter_graph_stations(G, num_remove):
+def filter_graph_stations(G, num_remove, kind=None):
     logger.info(f"Filtering graph: removing {num_remove} stations with highest farness")
 
     initial_length = G.vcount()
@@ -108,13 +108,13 @@ def filter_graph_stations(G, num_remove):
 
     # Get all nodes with the specified attribute, sorted by value (descending)
     nodes_with_attribute = []
-    if "farness" in G.vs.attributes():
+    if kind in G.vs.attributes():
         for i in range(G.vcount()):
-            nodes_with_attribute.append((i, G.vs[i]["farness"]))
-        logger.debug(f"Found farness data for all {len(nodes_with_attribute)} nodes")
+            nodes_with_attribute.append((i, G.vs[i][kind]))
+        logger.debug(f"Found {kind} data for all {len(nodes_with_attribute)} nodes")
     else:
-        logger.error("No farness attribute found in graph vertices")
-        raise ValueError("Graph vertices must have 'farness' attribute")
+        logger.error(f"No {kind} attribute found in graph vertices")
+        raise ValueError(f"Graph vertices must have {kind} attribute")
 
     nodes_with_attribute.sort(key=lambda x: x[1], reverse=True)
 
@@ -322,3 +322,37 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
     except Exception as e:
         logger.error(f"Failed to save Voronoi diagram to {output_path}: {e}")
         raise
+
+
+def remove_disconnected_nodes(G):
+    """
+    Remove all disconnected nodes (nodes with no edges) from the graph.
+    
+    Args:
+        G: igraph Graph object
+        
+    Returns:
+        Modified graph with disconnected nodes removed
+    """
+    logger.info("Removing disconnected nodes from graph")
+    
+    initial_count = G.vcount()
+    logger.debug(f"Initial graph size: {initial_count} nodes")
+    
+    # Find nodes with degree 0 (disconnected)
+    degrees = G.degree()
+    disconnected_nodes = [i for i, degree in enumerate(degrees) if degree == 0]
+    
+    if disconnected_nodes:
+        logger.info(f"Found {len(disconnected_nodes)} disconnected nodes to remove")
+        logger.debug(f"Disconnected node indices: {disconnected_nodes[:10]}{'...' if len(disconnected_nodes) > 10 else ''}")
+        
+        # Remove disconnected nodes (in reverse order to maintain indices)
+        G.delete_vertices(sorted(disconnected_nodes, reverse=True))
+        
+        final_count = G.vcount()
+        logger.info(f"Disconnected nodes removal completed: {initial_count} → {final_count} nodes")
+    else:
+        logger.info("No disconnected nodes found")
+    
+    return G
