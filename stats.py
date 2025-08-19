@@ -40,12 +40,17 @@ def get_graph_stats(G, base_convex_hull=None):
     )
 
     # Convex hull area and Voronoi analysis
-    if "coord" in G.vs.attributes() and G.vcount() >= 3:
+    if "x" in G.vs.attributes() and "y" in G.vs.attributes() and G.vcount() >= 3:
         logger.debug("Computing convex hull area...")
         try:
             # Extract coordinates
-            coords = [G.vs[i]["coord"] for i in range(G.vcount())]
-            points = [Point(coord[0], coord[1]) for coord in coords]  # lon, lat
+            coords = []
+            points = []
+            for i in range(G.vcount()):
+                lon = G.vs[i]["x"]
+                lat = G.vs[i]["y"]
+                coords.append([lon, lat])
+                points.append(Point(lon, lat))  # lon, lat
 
             # Create MultiPoint geometry for current graph
             multipoint = MultiPoint(points)
@@ -286,7 +291,7 @@ def get_graph_stats(G, base_convex_hull=None):
         }
 
     # Betweenness centrality (can be slow for large graphs)
-    if largest_cc.vcount() < 1000:
+    if largest_cc.vcount() < 10000:
         logger.debug("Computing betweenness centrality...")
         try:
             betweenness_centrality = largest_cc.betweenness(
@@ -335,18 +340,13 @@ def get_graph_stats(G, base_convex_hull=None):
 
     # Straightness centrality and global straightness
     if (
-        largest_cc.vcount() < 2000
+        largest_cc.vcount() < 20000
     ):  # Skip for very large graphs due to computational complexity
         logger.debug("Computing straightness measures...")
         try:
             # Check if nodes have coordinate attributes
-            if "coord" in largest_cc.vs.attributes():
-                # Extract x, y coordinates from coord attribute
-                for i, v in enumerate(largest_cc.vs):
-                    coord = v["coord"]
-                    v["x"] = coord[0]  # longitude
-                    v["y"] = coord[1]  # latitude
-
+            if "x" in largest_cc.vs.attributes() and "y" in largest_cc.vs.attributes():
+                # Coordinates are already available as x, y attributes
                 straightness_values = straightness_centrality(
                     largest_cc, weight="weight"
                 )
@@ -381,12 +381,12 @@ def get_graph_stats(G, base_convex_hull=None):
                     "unit": "n/a",
                 }
         except Exception as e:
-            logger.warning(f"Failed to compute straightness measures: {e}")
             stats["avg_straightness_centrality"] = {
                 "value": "Could not compute",
                 "unit": "n/a",
             }
             stats["global_straightness"] = {"value": "Could not compute", "unit": "n/a"}
+            raise e
     else:
         logger.info(
             f"Skipping straightness measures (graph too large: {largest_cc.vcount()} nodes)"

@@ -87,6 +87,7 @@ def main():
         # Step 0: Download road network
         step_start = log_step_start("0", "Downloading road network from OpenStreetMap")
         G_road = ox.graph_from_place(place, network_type="drive")
+        ox.save_graphml(G_road, f'data/{place.lower().replace(", ", "_")}_road.graphml')
         logger.info(
             f"✓ Road network downloaded: {len(G_road.nodes):,} nodes, {len(G_road.edges):,} edges"
         )

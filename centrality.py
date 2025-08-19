@@ -159,7 +159,7 @@ def straightness_centrality(g: ig.Graph, weight: str = "weight"):
     coords = {v.index: (v["x"], v["y"]) for v in g.vs}
 
     # Precompute all shortest path lengths
-    dG = g.shortest_paths_dijkstra(weights=weight)
+    dG = g.shortest_paths_dijkstra()
 
     for i in range(n):
         si = 0
@@ -172,7 +172,7 @@ def straightness_centrality(g: ig.Graph, weight: str = "weight"):
             if d_g == float("inf"):
                 continue  # disconnected
             xj, yj = coords[j]
-            d_e = np.hypot(xi - xj, yi - yj)
+            d_e = np.hypot(float(xi) - float(xj), float(yi) - float(yj))
             if d_e > 0:
                 si += d_e / d_g
                 valid += 1
@@ -204,7 +204,7 @@ def graph_straightness(g: ig.Graph, weight: str = "weight"):
     coords = {v.index: (v["x"], v["y"]) for v in g.vs}
 
     # All-pairs shortest paths
-    dG = g.shortest_paths_dijkstra(weights=weight)
+    dG = g.shortest_paths_dijkstra()
 
     num, den = 0.0, 0
 
@@ -217,7 +217,7 @@ def graph_straightness(g: ig.Graph, weight: str = "weight"):
             if d_g == float("inf"):
                 continue  # disconnected pair
             xj, yj = coords[j]
-            d_e = np.hypot(xi - xj, yi - yj)
+            d_e = np.hypot(float(xi) - float(xj), float(yi) - float(yj))
             if d_e > 0:
                 num += d_e / d_g
                 den += 1
