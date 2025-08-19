@@ -1,6 +1,5 @@
 import openrouteservice as ors
 import geopandas as gpd
-from typing import List, Tuple, Optional
 import igraph as ig
 import numpy as np
 import logging
@@ -15,8 +14,10 @@ def make_graph_from_stations(
     api_key: str,
     profile: str = "driving-car",
 ) -> ig.Graph:
-    logger.info(f"Creating graph from {len(stations)} fuel stations using profile: {profile}")
-    
+    logger.info(
+        f"Creating graph from {len(stations)} fuel stations using profile: {profile}"
+    )
+
     if stations.empty:
         logger.error("Stations GeoDataFrame is empty")
         raise ValueError("Stations GeoDataFrame cannot be empty")
@@ -56,7 +57,9 @@ def make_graph_from_stations(
 
     chunk_indices = list(chunks(range(n), MAX_LOCATIONS))
     total_chunks = len(chunk_indices)
-    logger.info(f"Split into {total_chunks} chunks of max {MAX_LOCATIONS} locations each")
+    logger.info(
+        f"Split into {total_chunks} chunks of max {MAX_LOCATIONS} locations each"
+    )
 
     # --- ORS client ---
     logger.debug("Initializing OpenRouteService client...")
@@ -77,9 +80,11 @@ def make_graph_from_stations(
     for src_chunk_idx, src_chunk in enumerate(chunk_indices):
         for dst_chunk_idx, dst_chunk in enumerate(chunk_indices):
             completed_requests += 1
-            logger.debug(f"Processing chunk pair {completed_requests}/{total_requests} "
-                        f"(src: {src_chunk_idx+1}/{total_chunks}, dst: {dst_chunk_idx+1}/{total_chunks})")
-            
+            logger.debug(
+                f"Processing chunk pair {completed_requests}/{total_requests} "
+                f"(src: {src_chunk_idx + 1}/{total_chunks}, dst: {dst_chunk_idx + 1}/{total_chunks})"
+            )
+
             coords_src = [locations[i] for i in src_chunk]
             coords_dst = [locations[i] for i in dst_chunk]
 
@@ -90,7 +95,9 @@ def make_graph_from_stations(
             )
 
             try:
-                logger.debug(f"Requesting distance matrix for {len(coords_src)} sources to {len(coords_dst)} destinations")
+                logger.debug(
+                    f"Requesting distance matrix for {len(coords_src)} sources to {len(coords_dst)} destinations"
+                )
                 matrix = client.distance_matrix(
                     locations=combined_coords,
                     profile=profile,
@@ -101,29 +108,37 @@ def make_graph_from_stations(
 
                 for i, src_i in enumerate(src_chunk):
                     for j, dst_j in enumerate(dst_chunk):
-                        distances[src_i, dst_j] = matrix["distances"][i][j] if matrix["distances"][i][j] else np.inf
-                        
+                        distances[src_i, dst_j] = (
+                            matrix["distances"][i][j]
+                            if matrix["distances"][i][j]
+                            else np.inf
+                        )
+
             except Exception as e:
-                logger.error(f"Failed to get distance matrix for chunk pair {src_chunk_idx}-{dst_chunk_idx}: {e}")
+                logger.error(
+                    f"Failed to get distance matrix for chunk pair {src_chunk_idx}-{dst_chunk_idx}: {e}"
+                )
                 # Fill with infinity for failed requests
                 for src_i in src_chunk:
                     for dst_j in dst_chunk:
                         distances[src_i, dst_j] = np.inf
 
             if completed_requests % max(1, total_requests // 10) == 0:
-                logger.info(f"Distance matrix progress: {completed_requests}/{total_requests} "
-                           f"({100*completed_requests/total_requests:.1f}%)")
+                logger.info(
+                    f"Distance matrix progress: {completed_requests}/{total_requests} "
+                    f"({100 * completed_requests / total_requests:.1f}%)"
+                )
 
     logger.info("Distance matrix calculation completed")
 
     # Create igraph Graph
     logger.info("Creating igraph directed graph...")
     G = ig.Graph(directed=True)
-    
+
     # Add vertices
     G.add_vertices(n)
     logger.debug(f"Added {n} vertices to graph")
-    
+
     # Set coordinates as vertex attributes
     for idx, coord in enumerate(locations):
         G.vs[idx]["coord"] = coord
@@ -133,7 +148,7 @@ def make_graph_from_stations(
     edges = []
     weights = []
     finite_edges = 0
-    
+
     for i in range(n):
         for j in range(n):
             if i != j:
@@ -145,8 +160,10 @@ def make_graph_from_stations(
 
     G.add_edges(edges)
     G.es["weight"] = weights
-    
-    logger.info(f"Graph creation completed: {G.vcount()} vertices, {G.ecount()} edges "
-               f"({finite_edges} with finite weights, {G.ecount() - finite_edges} infinite)")
+
+    logger.info(
+        f"Graph creation completed: {G.vcount()} vertices, {G.ecount()} edges "
+        f"({finite_edges} with finite weights, {G.ecount() - finite_edges} infinite)"
+    )
 
     return G

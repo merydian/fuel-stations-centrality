@@ -3,12 +3,10 @@ Tests for centrality.py module
 """
 
 import pytest
-import pandas as pd
 import geopandas as gpd
 from unittest.mock import patch, MagicMock
 from shapely.geometry import Point
 import networkx as nx
-import osmnx as ox
 import openrouteservice as ors
 
 from centrality import farness_centrality

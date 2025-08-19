@@ -13,7 +13,7 @@ def get_fuel_stations(place):
 
     try:
         # Configure OSM settings
-        ox.settings.overpass_settings = '[maxsize:20000000000]'
+        ox.settings.overpass_settings = "[maxsize:20000000000]"
         logger.debug("OSM overpass settings configured")
 
         tags = {"amenity": "fuel"}
@@ -21,7 +21,9 @@ def get_fuel_stations(place):
 
         logger.info("Downloading street network...")
         G = ox.graph_from_place(place, network_type="drive")
-        logger.info(f"Street network downloaded: {len(G.nodes)} nodes, {len(G.edges)} edges")
+        logger.info(
+            f"Street network downloaded: {len(G.nodes)} nodes, {len(G.edges)} edges"
+        )
 
         logger.info("Downloading fuel station features...")
         fuel_gdf = ox.features_from_place(place, tags)
@@ -40,7 +42,7 @@ if __name__ == "__main__":
     # Configure logging for standalone execution
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     place = "Iceland"
@@ -48,7 +50,9 @@ if __name__ == "__main__":
 
     try:
         fuel_stations = get_fuel_stations(place)
-        logger.info(f"Test completed successfully: Found {len(fuel_stations)} fuel stations in {place}")
+        logger.info(
+            f"Test completed successfully: Found {len(fuel_stations)} fuel stations in {place}"
+        )
     except Exception as e:
         logger.error(f"Test failed: {e}")
         sys.exit(1)
