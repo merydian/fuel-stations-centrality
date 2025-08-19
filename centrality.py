@@ -135,7 +135,7 @@ def download_graph(place):
         raise
 
 
-def straightness_centrality(g: ig.Graph, weight: str = "weight"):
+def straightness_centrality(g: ig.Graph, weight: str = None):
     """
     Compute straightness centrality for all nodes in a graph.
 
@@ -144,8 +144,8 @@ def straightness_centrality(g: ig.Graph, weight: str = "weight"):
     g : ig.Graph
         Road network graph (undirected or directed). Each node must
         have attributes "x" and "y".
-    weight : str
-        Edge attribute to use as distance (default = "weight"").
+    weight : str or None
+        Edge attribute to use as distance (default = None for unweighted).
 
     Returns
     -------
@@ -159,7 +159,10 @@ def straightness_centrality(g: ig.Graph, weight: str = "weight"):
     coords = {v.index: (v["x"], v["y"]) for v in g.vs}
 
     # Precompute all shortest path lengths
-    dG = g.shortest_paths_dijkstra()
+    if weight and weight in g.es.attributes():
+        dG = g.shortest_paths_dijkstra(weights=weight)
+    else:
+        dG = g.shortest_paths_dijkstra()
 
     for i in range(n):
         si = 0
@@ -181,7 +184,7 @@ def straightness_centrality(g: ig.Graph, weight: str = "weight"):
     return straightness
 
 
-def graph_straightness(g: ig.Graph, weight: str = "weight"):
+def graph_straightness(g: ig.Graph, weight: str = None):
     """
     Compute global straightness centrality for a graph.
 
@@ -190,8 +193,8 @@ def graph_straightness(g: ig.Graph, weight: str = "weight"):
     g : ig.Graph
         Road network graph (undirected or directed). Each node must
         have attributes "x" and "y".
-    weight : str
-        Edge attribute to use as distance (default = "weight"").
+    weight : str or None
+        Edge attribute to use as distance (default = None for unweighted).
 
     Returns
     -------
@@ -204,7 +207,10 @@ def graph_straightness(g: ig.Graph, weight: str = "weight"):
     coords = {v.index: (v["x"], v["y"]) for v in g.vs}
 
     # All-pairs shortest paths
-    dG = g.shortest_paths_dijkstra()
+    if weight and weight in g.es.attributes():
+        dG = g.shortest_paths_dijkstra(weights=weight)
+    else:
+        dG = g.shortest_paths_dijkstra()
 
     num, den = 0.0, 0
 

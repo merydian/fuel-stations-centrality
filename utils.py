@@ -246,13 +246,17 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
         logger.info(f"Creating output directory: {output_dir}")
         os.makedirs(output_dir)
 
+    # Define output path
+    output_path = f"{output_dir}/{out_file}"
+
     try:
         # Create GeoDataFrame for Voronoi polygons
         voronoi_data = []
         voronoi_polygons = G["voronoi_polygons"]
 
         for i in range(G.vcount()):
-            lon, lat = G.vs[i]["coord"]
+            lon = G.vs[i]["x"]
+            lat = G.vs[i]["y"]
             polygon = voronoi_polygons[i] if i < len(voronoi_polygons) else None
 
             # Calculate area if polygon is valid
@@ -319,7 +323,6 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
             gdf_base_hull = None
 
         # Save to GeoPackage
-        output_path = f"{output_dir}/output/{out_file}"
         logger.info(f"Writing Voronoi data to {output_path}...")
 
         gdf_voronoi.to_file(output_path, layer="voronoi_polygons", driver="GPKG")
@@ -333,7 +336,8 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
         # Add station points for reference
         station_points = []
         for i in range(G.vcount()):
-            lon, lat = G.vs[i]["coord"]
+            lon = G.vs[i]["x"]
+            lat = G.vs[i]["y"]
             farness_val = G.vs[i].get("farness", 0)
             knn_dist_val = G.vs[i].get("knn_dist", 0)
             station_points.append(
@@ -456,4 +460,5 @@ def get_gas_stations_from_graph(G):
 
     except Exception as e:
         logger.error(f"Failed to extract gas stations: {e}")
+        raise
         raise

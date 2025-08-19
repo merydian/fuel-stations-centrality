@@ -141,12 +141,14 @@ def make_graph_from_stations(
 
     # Set coordinates as vertex attributes
     for idx, coord in enumerate(locations):
-        G.vs[idx]["coord"] = coord
+        G.vs[idx]["x"] = coord[0]  # longitude
+        G.vs[idx]["y"] = coord[1]  # latitude
 
     # Add edges with distances
     logger.info("Adding edges with distance weights...")
     edges = []
     weights = []
+    lengths = []
     finite_edges = 0
 
     for i in range(n):
@@ -155,11 +157,13 @@ def make_graph_from_stations(
                 edges.append((i, j))
                 weight = distances[i, j]
                 weights.append(weight)
+                lengths.append(weight)  # Store as both weight and length for compatibility
                 if weight != np.inf:
                     finite_edges += 1
 
     G.add_edges(edges)
     G.es["weight"] = weights
+    G.es["length"] = lengths  # Add length attribute for edge filtering
 
     logger.info(
         f"Graph creation completed: {G.vcount()} vertices, {G.ecount()} edges "

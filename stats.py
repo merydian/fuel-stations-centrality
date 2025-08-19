@@ -278,7 +278,9 @@ def get_graph_stats(G, base_convex_hull=None):
     # Closeness centrality
     logger.debug("Computing closeness centrality...")
     try:
-        closeness_centrality = largest_cc.closeness(weights="weight", normalized=True)
+        # Check if weight attribute exists, use it if available
+        weight_attr = "weight" if "weight" in G.es.attributes() else None
+        closeness_centrality = largest_cc.closeness(weights=weight_attr, normalized=True)
         stats["avg_closeness_centrality"] = {
             "value": np.mean(closeness_centrality),
             "unit": "normalized ratio",
@@ -294,11 +296,16 @@ def get_graph_stats(G, base_convex_hull=None):
     if largest_cc.vcount() < 10000:
         logger.debug("Computing betweenness centrality...")
         try:
-            betweenness_centrality = largest_cc.betweenness(
-                weights="weight", normalized=True
-            )
+            # Check if weight attribute exists, use it if available
+            weight_attr = "weight" if "weight" in G.es.attributes() else None
+            betweenness_centrality = largest_cc.betweenness(weights=weight_attr)
+            # Normalize manually since igraph doesn't support normalized parameter consistently
+            n = largest_cc.vcount()
+            normalization_factor = 2.0 / ((n - 1) * (n - 2)) if n > 2 else 1.0
+            normalized_betweenness = [b * normalization_factor for b in betweenness_centrality]
+            
             stats["avg_betweenness_centrality"] = {
-                "value": np.mean(betweenness_centrality),
+                "value": np.mean(normalized_betweenness),
                 "unit": "normalized ratio",
             }
         except Exception as e:
@@ -320,7 +327,9 @@ def get_graph_stats(G, base_convex_hull=None):
     if largest_cc.is_connected(mode="weak"):
         logger.debug("Computing eigenvector centrality...")
         try:
-            eigenvector_centrality = largest_cc.eigenvector_centrality(weights="weight")
+            # Check if weight attribute exists, use it if available
+            weight_attr = "weight" if "weight" in G.es.attributes() else None
+            eigenvector_centrality = largest_cc.eigenvector_centrality(weights=weight_attr)
             stats["avg_eigenvector_centrality"] = {
                 "value": np.mean(eigenvector_centrality),
                 "unit": "normalized ratio",
@@ -346,9 +355,10 @@ def get_graph_stats(G, base_convex_hull=None):
         try:
             # Check if nodes have coordinate attributes
             if "x" in largest_cc.vs.attributes() and "y" in largest_cc.vs.attributes():
-                # Coordinates are already available as x, y attributes
+                # Check if weight attribute exists, use it if available
+                weight_attr = "weight" if "weight" in G.es.attributes() else None
                 straightness_values = straightness_centrality(
-                    largest_cc, weight="weight"
+                    largest_cc, weight=weight_attr
                 )
                 stats["avg_straightness_centrality"] = {
                     "value": np.mean(straightness_values),
@@ -364,7 +374,7 @@ def get_graph_stats(G, base_convex_hull=None):
                 }
 
                 # Global straightness
-                global_straightness = graph_straightness(largest_cc, weight="weight")
+                global_straightness = graph_straightness(largest_cc, weight=weight_attr)
                 stats["global_straightness"] = {
                     "value": global_straightness,
                     "unit": "ratio",
@@ -381,12 +391,12 @@ def get_graph_stats(G, base_convex_hull=None):
                     "unit": "n/a",
                 }
         except Exception as e:
+            logger.warning(f"Failed to compute straightness measures: {e}")
             stats["avg_straightness_centrality"] = {
                 "value": "Could not compute",
                 "unit": "n/a",
             }
             stats["global_straightness"] = {"value": "Could not compute", "unit": "n/a"}
-            raise e
     else:
         logger.info(
             f"Skipping straightness measures (graph too large: {largest_cc.vcount()} nodes)"
