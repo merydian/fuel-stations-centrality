@@ -36,7 +36,7 @@ def get_knn_distance(G, weight=None, k=3):
     
     # Get all shortest path distances
     logger.debug("Calculating shortest path distances matrix for k-NN...")
-    distances = G.distances(weights=weight)
+    distances = G.distances()
     
     for i in range(n):
         # Get distances from node i to all other nodes
@@ -80,7 +80,7 @@ def farness_centrality(G, weight=None, n=None):
     
     # Use igraph's shortest path distances
     logger.info("Calculating shortest path distances matrix...")
-    distances = G.distances(weights=weight)
+    distances = G.distances()
     logger.info("Distance matrix calculation completed")
     
     for i in range(n):
@@ -102,7 +102,7 @@ def farness_centrality(G, weight=None, n=None):
                f"Avg farness: {np.mean(list(farness.values())):.2f}, "
                f"Max farness: {max(farness.values()):.2f}")
     
-    knn_dist = get_knn_distance(G, weight, k=3)
+    knn_dist = get_knn_distance(G, weight, n)
 
     return G, farness, knn_dist
 
@@ -123,7 +123,7 @@ def download_graph(place):
         logger.error(f"Failed to download graph for {place}: {e}")
         raise
 
-def straightness_centrality(g: ig.Graph, weight: str = "length"):
+def straightness_centrality(g: ig.Graph, weight: str = "weight"):
     """
     Compute straightness centrality for all nodes in a graph.
 
@@ -133,7 +133,7 @@ def straightness_centrality(g: ig.Graph, weight: str = "length"):
         Road network graph (undirected or directed). Each node must
         have attributes "x" and "y".
     weight : str
-        Edge attribute to use as distance (default = "length").
+        Edge attribute to use as distance (default = "weight"").
 
     Returns
     -------
@@ -169,7 +169,7 @@ def straightness_centrality(g: ig.Graph, weight: str = "length"):
     return straightness
 
 
-def graph_straightness(g: ig.Graph, weight: str = "length"):
+def graph_straightness(g: ig.Graph, weight: str = "weight"):
     """
     Compute global straightness centrality for a graph.
     
@@ -179,7 +179,7 @@ def graph_straightness(g: ig.Graph, weight: str = "length"):
         Road network graph (undirected or directed). Each node must
         have attributes "x" and "y".
     weight : str
-        Edge attribute to use as distance (default = "length").
+        Edge attribute to use as distance (default = "weight"").
 
     Returns
     -------

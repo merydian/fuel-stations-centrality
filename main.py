@@ -2,6 +2,8 @@ import logging
 from centrality import farness_centrality
 from stats import get_graph_stats, compare_graph_stats
 
+import networkx as nx
+
 from utils import (
     graph_to_gdf,
     filter_graph_stations,
@@ -10,10 +12,12 @@ from utils import (
     save_voronoi_to_geopackage,
     remove_long_edges,
     remove_disconnected_nodes,
+    get_gas_stations_from_graph
 )
 from ors_router import make_graph_from_stations
 import os
-import geopandas as gpd
+import osmnx as ox
+import igraph as ig
 
 # Configure logging with more detailed format
 logging.basicConfig(
@@ -33,9 +37,9 @@ logging.getLogger("fiona").setLevel(logging.WARNING)  # Reduce geopandas noise
 logger = logging.getLogger(__name__)
 
 def main():
-    place = "Luxembourg"
-    MAX_DISTANCE = 200000  # meters
-    n_remove = 50
+    place = "Heidelberg, Germany"
+    MAX_DISTANCE = 20000  # meters
+    n_remove = 5
     n = 5
     kind = "knn_dist"
 
@@ -49,15 +53,26 @@ def main():
     logger.info(f"  ORS API Key: {'SET' if os.getenv('ORS_API_KEY') else 'NOT SET'}")
 
     try:
+        # Step 0: Download road network
+        logger.info("STEP 0: Downloading road network...")
+        G_road = ox.graph_from_place(place, network_type="drive")
+        logger.info(f"Downloaded road network: {len(G_road.nodes)} nodes, {len(G_road.edges)} edges")
+
         # Step 1: Load fuel stations
         logger.info("STEP 1: Loading fuel stations data...")
+
+        stations = get_gas_stations_from_graph(G_road)
         
-        # stations = get_fuel_stations(place)
-        stations_file = "stations_iran.gpkg"
-        logger.info(f"Loading stations from file: {stations_file}")
-        stations = gpd.read_file(stations_file)[:250]
+        # Limit number of stations for testing if too many
+        if len(stations) > 100:
+            stations = stations.sample(n=100, random_state=42).reset_index(drop=True)
+            logger.info(f"Sampled down to {len(stations)} stations for analysis")
 
         logger.info(f"Loaded {len(stations)} fuel stations")
+        
+        if len(stations) < 10:
+            logger.error(f"Insufficient fuel stations found: {len(stations)}. Need at least 10 for analysis.")
+            return
 
         # Step 2: Create initial graph
         logger.info("STEP 2: Creating station graph using OpenRouteService...")
@@ -96,6 +111,8 @@ def main():
         
         logger.info("Farness centrality computation completed")
 
+        G = ig.Graph.Read_GraphML('heidelberg_road.graphml')
+
         # Step 5: Get initial statistics (using base convex hull)
         logger.info("STEP 5: Computing initial graph statistics...")
         
@@ -122,20 +139,18 @@ def main():
         # Step 7: Filter stations and create new graph
         logger.info("STEP 7: Filtering stations and creating optimized graph...")
         
-        logger.info("Filtering stations based on farness centrality...")
-        G_filtered = filter_graph_stations(G, n_remove, kind)
+        logger.info(f"Filtering stations based on {kind}...")
+        remove_ids = knn_dist.keys()
+        G_filtered = filter_graph_stations(G, remove_ids)
 
         logger.info("STEP 3.1: Removing disconnected nodes...")
-        G = remove_disconnected_nodes(G)
+        G_filtered = remove_disconnected_nodes(G_filtered)
         
         logger.info("Converting filtered graph to GeoDataFrame...")
         dgf_filtered = graph_to_gdf(G_filtered)
         
         logger.info("Creating new graph from filtered stations...")
-        G_fareness_removed = make_graph_from_stations(
-            dgf_filtered, api_key=os.getenv("ORS_API_KEY")
-        )
-        G_fareness_removed = remove_long_edges(G_fareness_removed, MAX_DISTANCE)
+        G_fareness_removed = remove_long_edges(G_filtered, MAX_DISTANCE)
         G_fareness_removed = remove_disconnected_nodes(G_fareness_removed)
         
         logger.info("Filtered graph creation completed")
@@ -150,10 +165,7 @@ def main():
         dgf_random = graph_to_gdf(G_random)
         
         logger.info("Creating new graph from random stations...")
-        G_random_newly_calculated = make_graph_from_stations(
-            dgf_random, api_key=os.getenv("ORS_API_KEY")
-        )
-        G_random_newly_calculated = remove_long_edges(G_random_newly_calculated, MAX_DISTANCE)
+        G_random_newly_calculated = remove_long_edges(G, MAX_DISTANCE)
         G_random_newly_calculated = remove_disconnected_nodes(G_random_newly_calculated)
         
         logger.info("Random comparison graph creation completed")

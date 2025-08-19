@@ -5,6 +5,7 @@ import os
 import random
 import pyproj
 from shapely.ops import transform
+import osmnx as ox
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,14 @@ def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpk
     logger.debug("Converting graph nodes to GeoDataFrame...")
     node_geoms = []
     node_ids = []
+
+    # List all vertex attribute names
+    print(G.vs.attributes())
+
+
     for i in range(G.vcount()):
-        lon, lat = G.vs[i]["coord"]
+        lon = G.vs[i]['x']
+        lat = G.vs[i]['y']
         node_geoms.append(Point(lon, lat))
         node_ids.append(i)
     gdf_nodes = gpd.GeoDataFrame(
@@ -41,12 +48,14 @@ def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpk
 
     for edge in G.es:
         u, v = edge.source, edge.target
-        lon1, lat1 = G.vs[u]["coord"]
-        lon2, lat2 = G.vs[v]["coord"]
+        lon1, lat1 = G.vs[u]["x"], G.vs[u]["y"]
+        lon2, lat2 = G.vs[v]["x"], G.vs[v]["y"]
         edge_geoms.append(LineString([(lon1, lat1), (lon2, lat2)]))
         src_ids.append(u)
         dst_ids.append(v)
-        weight = edge["weight"]
+        
+        # Use length attribute instead of weight
+        weight = float(edge["length"]) if "length" in edge.attributes() else 0.0
         weights.append(weight)
         if weight != float("inf"):
             finite_weight_count += 1
@@ -85,59 +94,45 @@ def graph_to_gdf(G):
     # Convert nodes to GeoDataFrame
     nodes = []
     farness_available = "farness" in G.vs.attributes()
+    knn_dist_available = "knn_dist" in G.vs.attributes()
 
     for i in range(G.vcount()):
-        lon, lat = G.vs[i]["coord"]
+        lon = G.vs[i]['x']
+        lat = G.vs[i]['y']
         farness_val = G.vs[i]["farness"] if farness_available else 0
+        knn_dist_val = G.vs[i]["knn_dist"] if knn_dist_available else 0
         nodes.append(
-            {"id": i, "farness": farness_val, "geometry": Point(lon, lat)}
+            {"id": i, "farness": farness_val, "knn_dist": knn_dist_val, "geometry": Point(lon, lat)}
         )
 
     gdf_nodes = gpd.GeoDataFrame(nodes, crs="EPSG:4326")
     logger.debug(f"Created GeoDataFrame with {len(gdf_nodes)} features, "
-                f"farness data {'included' if farness_available else 'not available'}")
+                f"farness data {'included' if farness_available else 'not available'}, "
+                f"knn_dist data {'included' if knn_dist_available else 'not available'}")
 
     return gdf_nodes
 
 
-def filter_graph_stations(G, num_remove, kind=None):
-    logger.info(f"Filtering graph: removing {num_remove} stations with highest farness")
-
-    initial_length = G.vcount()
-    logger.debug(f"Initial graph size: {initial_length} nodes")
-
-    # Get all nodes with the specified attribute, sorted by value (descending)
-    nodes_with_attribute = []
-    if kind in G.vs.attributes():
-        for i in range(G.vcount()):
-            nodes_with_attribute.append((i, G.vs[i][kind]))
-        logger.debug(f"Found {kind} data for all {len(nodes_with_attribute)} nodes")
-    else:
-        logger.error(f"No {kind} attribute found in graph vertices")
-        raise ValueError(f"Graph vertices must have {kind} attribute")
-
-    nodes_with_attribute.sort(key=lambda x: x[1], reverse=True)
-
-    # Get top nodes to remove
-    nodes_to_remove = [node for node, _ in nodes_with_attribute[:num_remove]]
-    assert len(nodes_to_remove) == num_remove, "Not enough nodes to remove"
-
-    # Log some statistics about nodes being removed
-    farness_values_to_remove = [farness for _, farness in nodes_with_attribute[:num_remove]]
-    logger.info(f"Removing nodes with farness range: {min(farness_values_to_remove):.2f} - {max(farness_values_to_remove):.2f}")
-
+def filter_graph_stations(G, remove_ids):
+    """
+    Remove specified stations from the graph by their node IDs.
+    
+    Args:
+        G: igraph Graph object
+        remove_ids: List of node IDs to remove from the graph
+        
+    Returns:
+        Modified graph with specified stations removed
+    """
+    logger.info(f"Filtering graph: removing {len(remove_ids)} specified stations")
+    
     # Remove them from the graph
-    G.delete_vertices(nodes_to_remove)
-
-    assert num_remove > 0
-    assert initial_length - G.vcount() == num_remove
-
-    logger.info(f"Graph filtering completed: {initial_length} → {G.vcount()} nodes")
-
+    G.delete_vertices(remove_ids)
+            
     return G
 
 
-def remove_long_edges(G, max_distance, weight_attr="weight"):
+def remove_long_edges(G, max_distance, weight_attr="length"):
     logger.info(f"Removing edges longer than {max_distance:,} meters")
 
     # Find edges that exceed max distance
@@ -145,8 +140,11 @@ def remove_long_edges(G, max_distance, weight_attr="weight"):
     total_edges = G.ecount()
 
     for i, edge in enumerate(G.es):
-        if edge[weight_attr] > max_distance:
-            edges_to_remove.append(i)
+        if weight_attr in edge.attributes():
+            if float(edge[weight_attr]) > max_distance:
+                edges_to_remove.append(i)
+        else:
+            logger.warning(f"Edge {i} missing attribute '{weight_attr}', skipping")
 
     logger.info(f"Found {len(edges_to_remove)} edges longer than {max_distance:,} meters "
                f"({100*len(edges_to_remove)/total_edges:.1f}% of all edges)")
@@ -285,7 +283,7 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
             gdf_base_hull = None
         
         # Save to GeoPackage
-        output_path = f"{output_dir}/{out_file}"
+        output_path = f"{output_dir}/output/{out_file}"
         logger.info(f"Writing Voronoi data to {output_path}...")
         
         gdf_voronoi.to_file(output_path, layer="voronoi_polygons", driver="GPKG")
@@ -301,9 +299,11 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
         for i in range(G.vcount()):
             lon, lat = G.vs[i]["coord"]
             farness_val = G.vs[i].get("farness", 0)
+            knn_dist_val = G.vs[i].get("knn_dist", 0)
             station_points.append({
                 'node_id': i,
                 'farness': farness_val,
+                'knn_dist': knn_dist_val,
                 'geometry': Point(lon, lat)
             })
         
@@ -356,3 +356,62 @@ def remove_disconnected_nodes(G):
         logger.info("No disconnected nodes found")
     
     return G
+
+
+def get_gas_stations_from_graph(G):
+    """
+    Get gas stations within the area of a NetworkX graph from OSMnx.
+    
+    Args:
+        G: NetworkX graph from osmnx
+        
+    Returns:
+        GeoDataFrame of gas stations with Point geometries
+    """
+    logger.info("Extracting gas stations from OSM using graph boundaries")
+    
+    try:
+        # Convert graph nodes to GeoDataFrame
+        nodes_gdf = ox.graph_to_gdfs(G, edges=False)
+        logger.debug(f"Graph has {len(nodes_gdf)} nodes")
+
+        # Get convex hull of nodes (this should already be in EPSG:4326)
+        area_polygon = nodes_gdf.unary_union.convex_hull
+        logger.debug("Computed convex hull of graph nodes")
+
+        # Query gas stations within the polygon
+        tags = {"amenity": "fuel"}
+        logger.info("Downloading gas stations from OpenStreetMap...")
+        
+        gas_stations = ox.features_from_polygon(area_polygon, tags=tags)
+        logger.info(f"Downloaded {len(gas_stations)} gas station features")
+
+        # Filter to only include valid geometries and convert to points
+        logger.debug("Processing gas station geometries...")
+        gas_points = []
+        
+        for idx, station in gas_stations.iterrows():
+            geom = station.geometry
+            if geom is not None and not geom.is_empty:
+                if geom.geom_type == 'Point':
+                    gas_points.append(station)
+                elif hasattr(geom, 'centroid'):
+                    # Convert polygons/multipolygons to centroids
+                    station_copy = station.copy()
+                    station_copy.geometry = geom.centroid
+                    gas_points.append(station_copy)
+
+        if gas_points:
+            gas_stations_gdf = gpd.GeoDataFrame(gas_points, crs='EPSG:4326')
+            gas_stations_gdf = gas_stations_gdf.reset_index(drop=True)
+            logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations")
+        else:
+            # Create empty GeoDataFrame with expected structure
+            gas_stations_gdf = gpd.GeoDataFrame(columns=['geometry'], crs='EPSG:4326')
+            logger.warning("No valid gas stations found")
+
+        return gas_stations_gdf
+
+    except Exception as e:
+        logger.error(f"Failed to extract gas stations: {e}")
+        raise
