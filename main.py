@@ -35,6 +35,7 @@ def main():
     place = "Luxembourg"
     MAX_DISTANCE = 200000  # meters
     n_remove = 50
+    n = 5
     
     logger.info("="*60)
     logger.info("FUEL STATION CENTRALITY ANALYSIS STARTING")
@@ -89,7 +90,7 @@ def main():
         # Step 4: Calculate farness centrality
         logger.info("STEP 4: Computing farness centrality...")
         
-        G, farness = farness_centrality(G, weight="weight")
+        G, farness, knn_dist = farness_centrality(G, weight="weight", n=n)
         
         logger.info("Farness centrality computation completed")
 
@@ -112,7 +113,7 @@ def main():
         # Step 6: Save initial graph
         logger.info("STEP 6: Saving initial graph to GeoPackage...")
         
-        save_graph_to_geopackage(G, farness=farness, out_file="fuel_stations.gpkg")
+        save_graph_to_geopackage(G, farness=farness, knn_dist=knn_dist, out_file="fuel_stations.gpkg")
         
         logger.info("Initial graph saved successfully")
 
@@ -153,8 +154,8 @@ def main():
         # Step 8: Calculate farness for filtered graph
         logger.info("STEP 8: Computing farness centrality for filtered graph...")
         
-        G_fareness_removed, farness_filtered_newly_calculated = farness_centrality(
-            G_fareness_removed, weight="weight"
+        G_fareness_removed, farness_filtered_newly_calculated, knn_dist_filtered_newly_calculated = farness_centrality(
+            G_fareness_removed, weight="weight", n=n
         )
         
         logger.info("Filtered graph farness computation completed")
@@ -162,8 +163,8 @@ def main():
         # Step 8b: Calculate farness for random comparison graph
         logger.info("STEP 8b: Computing farness centrality for random comparison graph...")
         
-        G_random_newly_calculated, farness_random_newly_calculated = farness_centrality(
-            G_random_newly_calculated, weight="weight"
+        G_random_newly_calculated, farness_random_newly_calculated, knn_dist_random = farness_centrality(
+            G_random_newly_calculated, weight="weight", n=n
         )
         
         logger.info("Random comparison graph farness computation completed")
@@ -174,6 +175,7 @@ def main():
         save_graph_to_geopackage(
             G_fareness_removed, 
             farness=farness_filtered_newly_calculated, 
+            knn_dist=knn_dist_filtered_newly_calculated,
             out_file="fuel_stations_filtered.gpkg"
         )
         
@@ -196,6 +198,7 @@ def main():
         save_graph_to_geopackage(
             G_random_newly_calculated, 
             farness=farness_random_newly_calculated, 
+            knn_dist=knn_dist_random,
             out_file="fuel_stations_random.gpkg"
         )
         

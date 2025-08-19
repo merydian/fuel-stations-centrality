@@ -9,7 +9,7 @@ from shapely.ops import transform
 logger = logging.getLogger(__name__)
 
 
-def save_graph_to_geopackage(G, farness=None, out_file="graph.gpkg"):
+def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpkg"):
     logger.info(f"Saving graph to GeoPackage: {out_file}")
 
     # Ensure output directory exists
@@ -62,6 +62,10 @@ def save_graph_to_geopackage(G, farness=None, out_file="graph.gpkg"):
     if farness:
         logger.debug("Adding farness centrality data to nodes...")
         gdf_nodes["farness_m"] = gdf_nodes["node_id"].map(farness)
+    
+    if knn_dist:
+        logger.debug("Adding k-NN distance data to nodes...")
+        gdf_nodes["knn_dist_m"] = gdf_nodes["node_id"].map(knn_dist)
 
     # --- Save to GPKG ---
     output_path = f"{output_dir}/{out_file}"

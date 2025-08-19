@@ -11,7 +11,64 @@ import geopandas as gpd
 
 logger = logging.getLogger(__name__)
 
-def farness_centrality(G, weight=None):
+def get_knn_distance(G, weight=None, k=3):
+    """
+    Calculate the average distance to the k nearest neighbor stations for each node.
+    
+    Parameters
+    ----------
+    G : igraph.Graph
+        The graph containing stations as nodes
+    weight : str, optional
+        Edge attribute to use as weight for shortest path calculation
+    k : int, optional
+        Number of nearest neighbors to consider (default=3)
+    
+    Returns
+    -------
+    dict
+        Dictionary mapping node index to average k-NN distance
+    """
+    logger.info(f"Computing {k}-nearest neighbor distances for {G.vcount()} nodes")
+    
+    n = G.vcount()
+    knn_distances = {}
+    
+    # Get all shortest path distances
+    logger.debug("Calculating shortest path distances matrix for k-NN...")
+    distances = G.distances(weights=weight)
+    
+    for i in range(n):
+        # Get distances from node i to all other nodes
+        node_distances = []
+        for j in range(n):
+            if i != j and distances[i][j] != float('inf'):
+                node_distances.append(distances[i][j])
+        
+        # Sort distances and take k nearest neighbors
+        node_distances.sort()
+        k_nearest = node_distances[:min(k, len(node_distances))]
+        
+        # Calculate average distance to k nearest neighbors
+        if k_nearest:
+            avg_knn_dist = np.mean(k_nearest)
+        else:
+            avg_knn_dist = 0.0  # No reachable neighbors
+            
+        knn_distances[i] = avg_knn_dist
+        
+        if i % max(1, n // 10) == 0:  # Log progress every 10%
+            logger.debug(f"Processed k-NN for {i}/{n} nodes ({100*i/n:.1f}%)")
+    
+    # Add as vertex attribute
+    G.vs[f"knn_{k}_dist"] = [knn_distances.get(i, 0) for i in range(n)]
+    
+    logger.info(f"k-NN distance computation completed - "
+               f"Avg {k}-NN distance: {np.mean(list(knn_distances.values())):.2f}")
+    
+    return knn_distances
+
+def farness_centrality(G, weight=None, n=None):
     logger.info(f"Computing farness centrality for graph with {G.vcount()} nodes and {G.ecount()} edges")
     
     # Compute farness and normalized farness for each node
@@ -44,8 +101,10 @@ def farness_centrality(G, weight=None):
     logger.info(f"Farness centrality computation completed - "
                f"Avg farness: {np.mean(list(farness.values())):.2f}, "
                f"Max farness: {max(farness.values()):.2f}")
+    
+    knn_dist = get_knn_distance(G, weight, k=3)
 
-    return G, farness
+    return G, farness, knn_dist
 
 def download_graph(place):
     logger.info(f"Downloading street network for: {place}")
