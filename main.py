@@ -25,7 +25,7 @@ from utils import (
     remove_random_stations,
     save_graph_to_geopackage,
     save_voronoi_to_geopackage,
-    remove_long_edges,
+    remove_edges_far_from_stations,
     remove_disconnected_nodes,
     get_gas_stations_from_graph,
     create_base_convex_hull,
@@ -123,9 +123,9 @@ def main():
         step_start = log_step_start("5", "Converting road network for centrality analysis")
         G_road_ig = convert_networkx_to_igraph(G_road)
         
-        # Clean up long edges before baseline analysis
-        logger.info("  Cleaning up long edges from baseline road network...")
-        G_road_ig = remove_long_edges(G_road_ig, Config.MAX_DISTANCE)
+        # Clean up edges far from stations before baseline analysis
+        logger.info("  Cleaning up edges far from gas stations from baseline road network...")
+        G_road_ig = remove_edges_far_from_stations(G_road_ig, stations, Config.MAX_DISTANCE, station_to_node_mapping)
         
         # Create base convex hull from stations for consistent analysis
         base_convex_hull = create_base_convex_hull(stations)
@@ -173,9 +173,11 @@ def main():
         G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
         
-        # Clean up long edges after node removal
-        logger.info("  Cleaning up long edges after station removal...")
-        G_road_filtered_ig = remove_long_edges(G_road_filtered_ig, Config.MAX_DISTANCE)
+        # Clean up edges far from remaining stations after node removal
+        logger.info("  Cleaning up edges far from remaining stations after station removal...")
+        # Create filtered stations GeoDataFrame (excluding removed stations)
+        remaining_stations = stations[~stations.index.isin(stations_to_remove)]
+        G_road_filtered_ig = remove_edges_far_from_stations(G_road_filtered_ig, remaining_stations, Config.MAX_DISTANCE)
         
         logger.info(f"✓ Smart-filtered road network: {G_road_filtered_ig.vcount()} nodes, {G_road_filtered_ig.ecount()} edges")
         log_step_end(step_start, "9", "Smart station removal")
@@ -199,9 +201,11 @@ def main():
         G_road_random = remove_stations_from_road_network(G_road, station_to_node_mapping, random_stations_to_remove)
         G_road_random_ig = convert_networkx_to_igraph(G_road_random)
         
-        # Clean up long edges after node removal
-        logger.info("  Cleaning up long edges after station removal...")
-        G_road_random_ig = remove_long_edges(G_road_random_ig, Config.MAX_DISTANCE)
+        # Clean up edges far from remaining stations after node removal
+        logger.info("  Cleaning up edges far from remaining stations after station removal...")
+        # Create filtered stations GeoDataFrame (excluding removed stations)
+        remaining_stations_random = stations[~stations.index.isin(random_stations_to_remove)]
+        G_road_random_ig = remove_edges_far_from_stations(G_road_random_ig, remaining_stations_random, Config.MAX_DISTANCE)
         
         logger.info(f"✓ Random-filtered road network: {G_road_random_ig.vcount()} nodes, {G_road_random_ig.ecount()} edges")
         log_step_end(step_start, "10", "Random station removal")
