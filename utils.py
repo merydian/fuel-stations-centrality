@@ -868,3 +868,47 @@ def save_removed_stations_to_geopackage(stations_gdf, removed_indices, out_file=
     except Exception as e:
         logger.error(f"Failed to save removed stations to {output_path}: {e}")
         raise
+
+def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg"):
+    """
+    Save all gas stations to GeoPackage.
+    
+    Args:
+        stations_gdf: GeoDataFrame with gas station data
+        out_file: Output filename for the GeoPackage
+    """
+    logger.info(f"Saving {len(stations_gdf)} gas stations to GeoPackage: {out_file}")
+    
+    # Ensure output directory exists
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        logger.info(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir)
+    
+    # Define output path
+    output_path = f"{output_dir}/{out_file}"
+    
+    try:
+        # Create a copy to avoid modifying original data
+        stations_to_save = stations_gdf.copy()
+        
+        # Add metadata
+        stations_to_save['station_index'] = stations_to_save.index
+        stations_to_save['extraction_source'] = 'OpenStreetMap'
+        
+        # Ensure geometry is valid
+        stations_to_save = stations_to_save[~stations_to_save.geometry.is_empty]
+        
+        # Reset index for cleaner output
+        stations_to_save = stations_to_save.reset_index(drop=True)
+        
+        logger.info(f"Writing {len(stations_to_save)} gas stations to {output_path}...")
+        stations_to_save.to_file(output_path, layer="gas_stations", driver="GPKG")
+        
+        logger.info(f"Successfully saved gas stations to {output_path}")
+        logger.debug(f"  Number of stations: {len(stations_to_save)}")
+        logger.debug(f"  CRS: {stations_to_save.crs}")
+        
+    except Exception as e:
+        logger.error(f"Failed to save gas stations to {output_path}: {e}")
+        raise

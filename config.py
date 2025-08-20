@@ -11,7 +11,7 @@ class Config:
     
     # Analysis parameters
     PLACE = "Hamburg, Germany"
-    MAX_DISTANCE = 20000  # meters
+    MAX_DISTANCE = 3000  # meters
     N_REMOVE = 20
     K_NN = 5
     REMOVAL_KIND = "knn_dist"

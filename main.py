@@ -37,6 +37,7 @@ from utils import (
     convert_networkx_to_igraph,
     process_fuel_stations,
     save_removed_stations_to_geopackage,
+    save_stations_to_geopackage,
 )
 from ors_router import make_graph_from_stations
 
@@ -78,6 +79,12 @@ def main():
         stations = get_gas_stations_from_graph(G_road)
         log_step_end(step_start, "1", "Fuel station extraction")
 
+        # Step 1.5: Save all gas stations to GeoPackage
+        step_start = log_step_start("1.5", "Saving all gas stations to GeoPackage")
+        save_stations_to_geopackage(stations, out_file="all_gas_stations.gpkg")
+        logger.info(f"✓ All {len(stations)} gas stations saved to all_gas_stations.gpkg")
+        log_step_end(step_start, "1.5", "Gas stations save")
+
         # Step 2: Map stations to road network (needed for both methods)
         step_start = log_step_start("2", "Mapping stations to road network")
         station_to_node_mapping = find_stations_in_road_network(G_road, stations)
@@ -115,6 +122,10 @@ def main():
         # Step 5: Convert road network to igraph for centrality analysis
         step_start = log_step_start("5", "Converting road network for centrality analysis")
         G_road_ig = convert_networkx_to_igraph(G_road)
+        
+        # Clean up long edges before baseline analysis
+        logger.info("  Cleaning up long edges from baseline road network...")
+        G_road_ig = remove_long_edges(G_road_ig, Config.MAX_DISTANCE)
         
         # Create base convex hull from stations for consistent analysis
         base_convex_hull = create_base_convex_hull(stations)
@@ -161,6 +172,11 @@ def main():
         step_start = log_step_start("9", "Removing identified stations from road network")
         G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
+        
+        # Clean up long edges after node removal
+        logger.info("  Cleaning up long edges after station removal...")
+        G_road_filtered_ig = remove_long_edges(G_road_filtered_ig, Config.MAX_DISTANCE)
+        
         logger.info(f"✓ Smart-filtered road network: {G_road_filtered_ig.vcount()} nodes, {G_road_filtered_ig.ecount()} edges")
         log_step_end(step_start, "9", "Smart station removal")
 
@@ -182,6 +198,11 @@ def main():
         
         G_road_random = remove_stations_from_road_network(G_road, station_to_node_mapping, random_stations_to_remove)
         G_road_random_ig = convert_networkx_to_igraph(G_road_random)
+        
+        # Clean up long edges after node removal
+        logger.info("  Cleaning up long edges after station removal...")
+        G_road_random_ig = remove_long_edges(G_road_random_ig, Config.MAX_DISTANCE)
+        
         logger.info(f"✓ Random-filtered road network: {G_road_random_ig.vcount()} nodes, {G_road_random_ig.ecount()} edges")
         log_step_end(step_start, "10", "Random station removal")
 
@@ -304,6 +325,7 @@ def main():
         
         logger.info("")
         logger.info("📁 Output files saved:")
+        logger.info("   • all_gas_stations.gpkg - All extracted gas stations from OpenStreetMap")
         logger.info("   • road_network_baseline.gpkg - Complete road network with centrality measures")
         logger.info("   • road_network_smart_filtered.gpkg - Road network after strategic station removal")
         logger.info("   • road_network_random_filtered.gpkg - Road network after random station removal")
