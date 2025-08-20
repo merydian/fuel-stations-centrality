@@ -4,6 +4,8 @@ Enhanced main module with improved error handling and code structure.
 
 import logging
 import time
+import sys
+import random
 from datetime import datetime
 from pathlib import Path
 
@@ -16,6 +18,7 @@ from shapely.geometry import Point, MultiPoint
 from config import Config
 from centrality import farness_centrality
 from stats import get_graph_stats, compare_graph_stats
+from downloader import download_or_load_road_network
 from utils import (
     graph_to_gdf,
     filter_graph_stations,
@@ -25,104 +28,18 @@ from utils import (
     remove_long_edges,
     remove_disconnected_nodes,
     get_gas_stations_from_graph,
+    create_base_convex_hull,
+    setup_logging,
+    log_step_start,
+    log_step_end,
+    find_stations_in_road_network,
+    remove_stations_from_road_network,
+    convert_networkx_to_igraph,
+    process_fuel_stations,
 )
 from ors_router import make_graph_from_stations
 
-
-# Configure logging with more detailed format
-def setup_logging():
-    """Set up comprehensive logging configuration."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.FileHandler(Config.LOG_FILE, mode="w"),
-            logging.StreamHandler(),
-        ],
-    )
-
-    # Set specific log levels for different modules
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("fiona").setLevel(logging.WARNING)
-    logging.getLogger("geopandas").setLevel(logging.WARNING)
-    logging.getLogger("shapely").setLevel(logging.WARNING)
-    logging.getLogger("pyproj").setLevel(logging.WARNING)
-
-
-def log_step_start(step_num, description):
-    """Log the start of a major step with timing."""
-    logger = logging.getLogger(__name__)
-    logger.info("=" * 60)
-    logger.info(f"STEP {step_num}: {description}")
-    logger.info("=" * 60)
-    return time.time()
-
-
-def log_step_end(start_time, step_num, description):
-    """Log the completion of a major step with duration."""
-    logger = logging.getLogger(__name__)
-    duration = time.time() - start_time
-    logger.info(f"STEP {step_num} COMPLETED: {description} (Duration: {duration:.2f}s)")
-    logger.info("-" * 60)
-
-
-def create_base_convex_hull(G):
-    """Create base convex hull from graph coordinates."""
-    try:
-        coords = [(G.vs[i]["x"], G.vs[i]["y"]) for i in range(G.vcount())]
-        points = [Point(coord[0], coord[1]) for coord in coords]
-        multipoint = MultiPoint(points)
-        return multipoint.convex_hull
-    except Exception as e:
-        logging.getLogger(__name__).error(f"Failed to compute base convex hull: {e}")
-        return None
-
-
-def download_or_load_road_network(place: str):
-    """Download road network or load from cache if available."""
-    logger = logging.getLogger(__name__)
-    
-    road_filename = Config.get_road_filename(place)
-    road_filepath = Config.DATA_DIR / road_filename
-    
-    if road_filepath.exists():
-        logger.info(f"Loading cached road network from {road_filepath}")
-        try:
-            G_road = ox.load_graphml(road_filepath)
-            logger.info(f"✓ Cached road network loaded: {len(G_road.nodes):,} nodes, {len(G_road.edges):,} edges")
-            return G_road
-        except Exception as e:
-            logger.warning(f"Failed to load cached road network: {e}. Downloading fresh copy.")
-    
-    # Download fresh network
-    logger.info(f"Downloading road network for: {place}")
-    G_road = ox.graph_from_place(place, network_type="drive")
-    
-    # Save for future use
-    ox.save_graphml(G_road, road_filepath)
-    logger.info(f"✓ Road network downloaded and saved: {len(G_road.nodes):,} nodes, {len(G_road.edges):,} edges")
-    
-    return G_road
-
-
-def process_fuel_stations(stations, max_stations=None):
-    """Process and validate fuel stations data."""
-    logger = logging.getLogger(__name__)
-    
-    original_count = len(stations)
-    
-    # Limit number of stations if needed
-    if max_stations and len(stations) > max_stations:
-        logger.warning(f"Found {len(stations)} stations, limiting to {max_stations} for performance")
-        stations = stations.sample(n=max_stations, random_state=Config.RANDOM_SEED).reset_index(drop=True)
-
-    logger.info(f"✓ Fuel stations processed: {len(stations)} stations")
-
-    if len(stations) < Config.MIN_STATIONS_REQUIRED:
-        raise ValueError(f"Insufficient fuel stations: {len(stations)} < {Config.MIN_STATIONS_REQUIRED} minimum required")
-    
-    return stations
+logger = logging.getLogger(__name__)
 
 
 def main():
@@ -157,162 +74,158 @@ def main():
         # Step 1: Load fuel stations
         step_start = log_step_start("1", "Extracting fuel stations from road network area")
         stations = get_gas_stations_from_graph(G_road)
-        stations = process_fuel_stations(stations, Config.MAX_STATIONS_FOR_ANALYSIS)
         log_step_end(step_start, "1", "Fuel station extraction")
 
-        # Step 2: Create initial graph
-        step_start = log_step_start("2", "Building station connectivity graph")
+        # Step 2: Create stations connectivity graph for analysis
+        step_start = log_step_start("2", "Building station connectivity graph for k-NN analysis")
         logger.info("  Using OpenRouteService API for precise driving distances...")
-        G = make_graph_from_stations(stations, api_key=Config.ORS_API_KEY)
-        logger.info(f"✓ Station graph created: {G.vcount()} nodes, {G.ecount()} edges")
+        G_stations = make_graph_from_stations(stations, api_key=Config.ORS_API_KEY)
+        logger.info(f"✓ Station graph created: {G_stations.vcount()} nodes, {G_stations.ecount()} edges")
         log_step_end(step_start, "2", "Station graph creation")
 
-        # Step 2.1: Extract and store the original convex hull
-        step_start = log_step_start("2.1", "Computing base geometry for consistent analysis")
-        base_convex_hull = create_base_convex_hull(G)
+        # Step 3: Analyze stations to find removal candidates
+        step_start = log_step_start("3", "Computing k-NN distances for station analysis")
+        logger.info("  Computing farness centrality and k-NN distances on station graph...")
+        G_stations, farness_stations, knn_dist = farness_centrality(G_stations, weight="weight", n=Config.K_NN)
+        logger.info(f"✓ Station analysis complete: {len(knn_dist)} stations analyzed")
+        log_step_end(step_start, "3", "Station analysis")
+
+        # Step 4: Map stations to road network
+        step_start = log_step_start("4", "Mapping stations to road network")
+        station_to_node_mapping = find_stations_in_road_network(G_road, stations)
+        log_step_end(step_start, "4", "Station mapping")
+
+        # Step 5: Convert road network to igraph for centrality analysis
+        step_start = log_step_start("5", "Converting road network for centrality analysis")
+        G_road_ig = convert_networkx_to_igraph(G_road)
+        
+        # Create base convex hull from stations for consistent analysis
+        base_convex_hull = create_base_convex_hull(stations)
         if base_convex_hull:
-            logger.info("✓ Base convex hull computed for consistent Voronoi clipping")
+            logger.info("✓ Base convex hull computed for consistent analysis")
         else:
             logger.warning("⚠ Could not compute base convex hull")
-        log_step_end(step_start, "2.1", "Base geometry computation")
+        log_step_end(step_start, "5", "Road network conversion")
 
-        # Step 3: Filter long edges
-        step_start = log_step_start("3", "Filtering unrealistic long-distance connections")
-        initial_edges = G.ecount()
-        G = remove_long_edges(G, Config.MAX_DISTANCE)
-        removed_edges = initial_edges - G.ecount()
-        logger.info(f"✓ Edge filtering complete: removed {removed_edges} edges ({100 * removed_edges / initial_edges:.1f}% if initial_edges > 0 else 0)")
-        log_step_end(step_start, "3", "Edge filtering")
+        # Step 6: Get baseline statistics on full road network
+        step_start = log_step_start("6", "Computing baseline road network statistics")
+        old_stats = get_graph_stats(G_road_ig, base_convex_hull=base_convex_hull)
+        logger.info("✓ Baseline road network statistics computed")
+        log_step_end(step_start, "6", "Baseline statistics")
 
-        # Step 4: Calculate farness centrality
-        step_start = log_step_start("4", "Computing centrality measures")
-        logger.info("  Computing farness centrality and k-NN distances...")
-        G, farness, knn_dist = farness_centrality(G, weight="weight", n=Config.K_NN)
-        logger.info(f"✓ Centrality computation complete for {len(farness)} nodes")
-        log_step_end(step_start, "4", "Centrality computation")
+        # Step 7: Save baseline road network
+        step_start = log_step_start("7", "Saving baseline road network data")
+        save_graph_to_geopackage(G_road_ig, out_file="road_network_baseline.gpkg")
+        logger.info("✓ Baseline road network saved to GeoPackage")
+        log_step_end(step_start, "7", "Baseline save")
 
-        # Step 5: Get initial statistics
-        step_start = log_step_start("5", "Computing baseline graph statistics")
-        old_stats = get_graph_stats(G, base_convex_hull=base_convex_hull)
-        logger.info("✓ Baseline statistics computed")
-        log_step_end(step_start, "5", "Baseline statistics")
-
-        # Step 5b: Save Voronoi diagram for initial graph
-        step_start = log_step_start("5b", "Saving baseline Voronoi diagram")
-        try:
-            save_voronoi_to_geopackage(G, out_file="voronoi_initial.gpkg")
-            logger.info("✓ Baseline Voronoi diagram saved")
-        except Exception as e:
-            logger.warning(f"⚠ Could not save baseline Voronoi diagram: {e}")
-        log_step_end(step_start, "5b", "Baseline Voronoi save")
-
-        # Step 6: Save initial graph
-        step_start = log_step_start("6", "Saving baseline graph data")
-        save_graph_to_geopackage(G, farness=farness, knn_dist=knn_dist, out_file="fuel_stations.gpkg")
-        logger.info("✓ Baseline graph saved to GeoPackage")
-        log_step_end(step_start, "6", "Baseline graph save")
-
-        # Step 7: Filter stations and create new graph
-        step_start = log_step_start("7", f"Applying {Config.REMOVAL_KIND}-based station filtering")
+        # Step 8: Identify stations for removal based on k-NN analysis
+        step_start = log_step_start("8", f"Identifying stations for removal based on {Config.REMOVAL_KIND}")
         logger.info(f"  Selecting top {Config.N_REMOVE} stations for removal based on {Config.REMOVAL_KIND} values...")
         
         # Get stations with highest knn_dist values for removal
         sorted_stations = sorted(knn_dist.items(), key=lambda x: x[1], reverse=True)
-        remove_ids = [station_id for station_id, _ in sorted_stations[:Config.N_REMOVE]]
+        stations_to_remove = [station_id for station_id, _ in sorted_stations[:Config.N_REMOVE]]
         
-        initial_nodes = G.vcount()
-        G_filtered = filter_graph_stations(G.copy(), remove_ids)
-        G_filtered = remove_disconnected_nodes(G_filtered)
+        logger.info(f"✓ Identified {len(stations_to_remove)} stations for removal: {stations_to_remove}")
+        log_step_end(step_start, "8", "Station identification")
+
+        # Step 9: Remove stations from road network (smart removal)
+        step_start = log_step_start("9", "Removing identified stations from road network")
+        G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
+        G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
+        logger.info(f"✓ Smart-filtered road network: {G_road_filtered_ig.vcount()} nodes, {G_road_filtered_ig.ecount()} edges")
+        log_step_end(step_start, "9", "Smart station removal")
+
+        # Step 10: Create random comparison by removing random stations
+        step_start = log_step_start("10", "Creating random comparison road network")
+        # Select random stations for removal
+        random.seed(Config.RANDOM_SEED)
+        all_station_indices = list(station_to_node_mapping.keys())
+        random_stations_to_remove = random.sample(all_station_indices, min(Config.N_REMOVE, len(all_station_indices)))
         
-        logger.info(f"✓ Filtered graph: {initial_nodes} → {G_filtered.vcount()} nodes")
+        G_road_random = remove_stations_from_road_network(G_road, station_to_node_mapping, random_stations_to_remove)
+        G_road_random_ig = convert_networkx_to_igraph(G_road_random)
+        logger.info(f"✓ Random-filtered road network: {G_road_random_ig.vcount()} nodes, {G_road_random_ig.ecount()} edges")
+        log_step_end(step_start, "10", "Random station removal")
+
+        # Step 11: Compute centrality measures on filtered road networks
+        step_start = log_step_start("11", "Computing centrality measures on filtered road networks")
         
-        # Apply additional processing
-        G_filtered = remove_long_edges(G_filtered, Config.MAX_DISTANCE)
-        G_filtered = remove_disconnected_nodes(G_filtered)
+        logger.info("  Computing statistics for smart-filtered road network...")
+        smart_stats = get_graph_stats(G_road_filtered_ig, base_convex_hull=base_convex_hull)
         
-        logger.info(f"✓ Optimized filtered graph: {G_filtered.vcount()} nodes, {G_filtered.ecount()} edges")
-        log_step_end(step_start, "7", "Station filtering")
-
-        # Step 7b: Create random comparison graph
-        step_start = log_step_start("7b", "Creating random comparison graph")
-        logger.info("  Removing random stations for comparison...")
-        G_random = remove_random_stations(G.copy(), Config.N_REMOVE, seed=Config.RANDOM_SEED)
-        G_random = remove_long_edges(G_random, Config.MAX_DISTANCE)
-        G_random = remove_disconnected_nodes(G_random)
-        logger.info("✓ Random comparison graph created")
-        log_step_end(step_start, "7b", "Random comparison graph")
-
-        # Step 8: Calculate farness for filtered graph
-        step_start = log_step_start("8", "Computing farness centrality for filtered graph")
-        G_filtered, farness_filtered, knn_dist_filtered = farness_centrality(G_filtered, weight="weight", n=Config.K_NN)
-        logger.info("✓ Filtered graph farness computation completed")
-        log_step_end(step_start, "8", "Filtered graph farness")
-
-        # Step 8b: Calculate farness for random comparison graph
-        step_start = log_step_start("8b", "Computing farness centrality for random comparison graph")
-        G_random, farness_random, knn_dist_random = farness_centrality(G_random, weight="weight", n=Config.K_NN)
-        logger.info("✓ Random comparison graph farness computation completed")
-        log_step_end(step_start, "8b", "Random graph farness")
-
-        # Step 9: Save filtered graph
-        step_start = log_step_start("9", "Saving filtered graph")
-        save_graph_to_geopackage(G_filtered, farness=farness_filtered, knn_dist=knn_dist_filtered, out_file="fuel_stations_filtered.gpkg")
-        logger.info("✓ Filtered graph saved successfully")
-        log_step_end(step_start, "9", "Filtered graph save")
-
-        # Step 9b: Save random comparison graph
-        step_start = log_step_start("9b", "Saving random comparison graph")
-        save_graph_to_geopackage(G_random, farness=farness_random, knn_dist=knn_dist_random, out_file="fuel_stations_random.gpkg")
-        logger.info("✓ Random comparison graph saved successfully")
-        log_step_end(step_start, "9b", "Random graph save")
-
-        # Step 10: Generate comparison
-        step_start = log_step_start("10", "Generating comparison statistics")
+        logger.info("  Computing statistics for random-filtered road network...")
+        random_stats = get_graph_stats(G_road_random_ig, base_convex_hull=base_convex_hull)
         
-        new_stats = get_graph_stats(G_filtered, base_convex_hull=base_convex_hull)
-        random_stats = get_graph_stats(G_random, base_convex_hull=base_convex_hull)
+        logger.info("✓ Centrality measures computed for both filtered networks")
+        log_step_end(step_start, "11", "Filtered network analysis")
 
-        # Compare farness-based filtering vs original
-        farness_comparison = compare_graph_stats(old_stats, new_stats, title1="Original Graph", title2="Farness-Filtered Graph")
+        # Step 12: Save filtered road networks
+        step_start = log_step_start("12", "Saving filtered road networks")
+        save_graph_to_geopackage(G_road_filtered_ig, out_file="road_network_smart_filtered.gpkg")
+        save_graph_to_geopackage(G_road_random_ig, out_file="road_network_random_filtered.gpkg")
+        logger.info("✓ Filtered road networks saved")
+        log_step_end(step_start, "12", "Filtered network save")
 
-        # Compare random removal vs original
-        random_comparison = compare_graph_stats(old_stats, random_stats, title1="Original Graph", title2="Random-Filtered Graph")
-
-        # Compare farness-based vs random removal
-        method_comparison = compare_graph_stats(new_stats, random_stats, title1="Farness-Filtered Graph", title2="Random-Filtered Graph")
-
-        logger.info("✓ Comparison statistics generated")
-        log_step_end(step_start, "10", "Comparison statistics")
-
-        # Print results
-        print(farness_comparison)
-        print(random_comparison)
-        print(method_comparison)
-
-        # Log final results
-        total_duration = time.time() - analysis_start_time
-        logger.info("=" * 80)
-        logger.info(f"ANALYSIS COMPLETED SUCCESSFULLY - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        logger.info(f"Total Duration: {total_duration:.2f} seconds ({total_duration / 60:.1f} minutes)")
-        logger.info("=" * 80)
-        logger.info("Generated Files:")
-        logger.info("  • fuel_stations.gpkg - Baseline graph data")
-        logger.info("  • fuel_stations_filtered.gpkg - Optimized graph data")
-        logger.info("  • fuel_stations_random.gpkg - Random comparison data")
-        logger.info("  • voronoi_*.gpkg - Service area diagrams (if generated)")
-        logger.info("  • fuel_stations.log - Detailed analysis log")
+                # Step 13: Compare and log results
+        step_start = log_step_start("13", "Comparing baseline vs filtered road networks")
+        
+        logger.info("=" * 60)
+        logger.info("                    ANALYSIS COMPLETE")
+        logger.info("=" * 60)
+        
+        # Log baseline road network stats
+        logger.info("📊 BASELINE ROAD NETWORK STATISTICS:")
+        logger.info(f"   • Nodes: {old_stats['num_nodes']['value']:,}")
+        logger.info(f"   • Edges: {old_stats['num_edges']['value']:,}")
+        logger.info(f"   • Density: {old_stats['density']['value']:.6f}")
+        logger.info(f"   • Mean degree centrality: {old_stats.get('avg_degree_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean closeness centrality: {old_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean betweenness centrality: {old_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean eigenvector centrality: {old_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean straightness centrality: {old_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Global straightness: {old_stats.get('global_straightness', {}).get('value', 'N/A')}")
+        
+        # Log smart-filtered road network stats
         logger.info("")
-        logger.info("Note: All analyses use consistent parameters for fair comparison")
+        logger.info(f"🎯 SMART-FILTERED ROAD NETWORK STATISTICS (removed {Config.N_REMOVE} high k-NN stations):")
+        logger.info(f"   • Nodes: {smart_stats['num_nodes']['value']:,} (Δ: {smart_stats['num_nodes']['value'] - old_stats['num_nodes']['value']:+,})")
+        logger.info(f"   • Edges: {smart_stats['num_edges']['value']:,} (Δ: {smart_stats['num_edges']['value'] - old_stats['num_edges']['value']:+,})")
+        logger.info(f"   • Density: {smart_stats['density']['value']:.6f} (Δ: {smart_stats['density']['value'] - old_stats['density']['value']:+.6f})")
+        logger.info(f"   • Mean degree centrality: {smart_stats.get('avg_degree_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean closeness centrality: {smart_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean betweenness centrality: {smart_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean eigenvector centrality: {smart_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean straightness centrality: {smart_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Global straightness: {smart_stats.get('global_straightness', {}).get('value', 'N/A')}")
+        
+        # Log random-filtered road network stats
+        logger.info("")
+        logger.info(f"🎲 RANDOM-FILTERED ROAD NETWORK STATISTICS (removed {Config.N_REMOVE} random stations):")
+        logger.info(f"   • Nodes: {random_stats['num_nodes']['value']:,} (Δ: {random_stats['num_nodes']['value'] - old_stats['num_nodes']['value']:+,})")
+        logger.info(f"   • Edges: {random_stats['num_edges']['value']:,} (Δ: {random_stats['num_edges']['value'] - old_stats['num_edges']['value']:+,})")
+        logger.info(f"   • Density: {random_stats['density']['value']:.6f} (Δ: {random_stats['density']['value'] - old_stats['density']['value']:+.6f})")
+        logger.info(f"   • Mean degree centrality: {random_stats.get('avg_degree_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean closeness centrality: {random_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean betweenness centrality: {random_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean eigenvector centrality: {random_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Mean straightness centrality: {random_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')}")
+        logger.info(f"   • Global straightness: {random_stats.get('global_straightness', {}).get('value', 'N/A')}")
+        
+        logger.info("")
+        logger.info("📁 Output files saved:")
+        logger.info("   • road_network_baseline.gpkg - Complete road network with centrality measures")
+        logger.info("   • road_network_smart_filtered.gpkg - Road network after strategic station removal")
+        logger.info("   • road_network_random_filtered.gpkg - Road network after random station removal")
+        
+        log_step_end(step_start, "13", "Results comparison")
 
     except Exception as e:
-        total_duration = time.time() - analysis_start_time
-        logger.error("=" * 80)
-        logger.error(f"ANALYSIS FAILED AFTER {total_duration:.2f} SECONDS")
-        logger.error("=" * 80)
-        logger.error(f"Error: {str(e)}")
-        logger.error("Check the log file for detailed error information")
-        logger.error("=" * 80)
-        raise
+        logger.error(f"❌ CRITICAL ERROR: {e}")
+        import traceback
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

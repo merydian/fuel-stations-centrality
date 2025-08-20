@@ -5,6 +5,7 @@ from shapely.geometry import Point, MultiPoint, Polygon
 from shapely.ops import transform
 from scipy.spatial import Voronoi
 from centrality import straightness_centrality, graph_straightness
+from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -292,34 +293,25 @@ def get_graph_stats(G, base_convex_hull=None):
             "unit": "n/a",
         }
 
-    # Betweenness centrality (can be slow for large graphs)
-    if largest_cc.vcount() < 10000:
-        logger.debug("Computing betweenness centrality...")
-        try:
-            # Check if weight attribute exists, use it if available
-            weight_attr = "weight" if "weight" in G.es.attributes() else None
-            betweenness_centrality = largest_cc.betweenness(weights=weight_attr)
-            # Normalize manually since igraph doesn't support normalized parameter consistently
-            n = largest_cc.vcount()
-            normalization_factor = 2.0 / ((n - 1) * (n - 2)) if n > 2 else 1.0
-            normalized_betweenness = [b * normalization_factor for b in betweenness_centrality]
-            
-            stats["avg_betweenness_centrality"] = {
-                "value": np.mean(normalized_betweenness),
-                "unit": "normalized ratio",
-            }
-        except Exception as e:
-            logger.warning(f"Failed to compute betweenness centrality: {e}")
-            stats["avg_betweenness_centrality"] = {
-                "value": "Could not compute",
-                "unit": "n/a",
-            }
-    else:
-        logger.info(
-            f"Skipping betweenness centrality (graph too large: {largest_cc.vcount()} nodes)"
-        )
+    # Betweenness centrality - compute regardless of size
+    logger.debug("Computing betweenness centrality...")
+    try:
+        # Check if weight attribute exists, use it if available
+        weight_attr = "weight" if "weight" in G.es.attributes() else None
+        betweenness_centrality = largest_cc.betweenness(weights=weight_attr)
+        # Normalize manually since igraph doesn't support normalized parameter consistently
+        n = largest_cc.vcount()
+        normalization_factor = 2.0 / ((n - 1) * (n - 2)) if n > 2 else 1.0
+        normalized_betweenness = [b * normalization_factor for b in betweenness_centrality]
+        
         stats["avg_betweenness_centrality"] = {
-            "value": "Skipped (graph too large)",
+            "value": np.mean(normalized_betweenness),
+            "unit": "normalized ratio",
+        }
+    except Exception as e:
+        logger.warning(f"Failed to compute betweenness centrality: {e}")
+        stats["avg_betweenness_centrality"] = {
+            "value": "Could not compute",
             "unit": "n/a",
         }
 
@@ -347,68 +339,53 @@ def get_graph_stats(G, base_convex_hull=None):
             "unit": "n/a",
         }
 
-    # Straightness centrality and global straightness
-    if (
-        largest_cc.vcount() < 20000
-    ):  # Skip for very large graphs due to computational complexity
-        logger.debug("Computing straightness measures...")
-        try:
-            # Check if nodes have coordinate attributes
-            if "x" in largest_cc.vs.attributes() and "y" in largest_cc.vs.attributes():
-                # Check if weight attribute exists, use it if available
-                weight_attr = "weight" if "weight" in G.es.attributes() else None
-                straightness_values = straightness_centrality(
-                    largest_cc, weight=weight_attr
-                )
-                stats["avg_straightness_centrality"] = {
-                    "value": np.mean(straightness_values),
-                    "unit": "ratio",
-                }
-                stats["max_straightness_centrality"] = {
-                    "value": max(straightness_values),
-                    "unit": "ratio",
-                }
-                stats["min_straightness_centrality"] = {
-                    "value": min(straightness_values),
-                    "unit": "ratio",
-                }
-
-                # Global straightness
-                global_straightness = graph_straightness(largest_cc, weight=weight_attr)
-                stats["global_straightness"] = {
-                    "value": global_straightness,
-                    "unit": "ratio",
-                }
-
-            else:
-                logger.warning("No coordinate data found for straightness centrality")
-                stats["avg_straightness_centrality"] = {
-                    "value": "No coordinate data",
-                    "unit": "n/a",
-                }
-                stats["global_straightness"] = {
-                    "value": "No coordinate data",
-                    "unit": "n/a",
-                }
-        except Exception as e:
-            logger.warning(f"Failed to compute straightness measures: {e}")
+    # Straightness centrality and global straightness - compute regardless of size
+    logger.debug("Computing straightness measures...")
+    try:
+        # Check if nodes have coordinate attributes
+        if "x" in largest_cc.vs.attributes() and "y" in largest_cc.vs.attributes():
+            # Check if weight attribute exists, use it if available
+            weight_attr = "weight" if "weight" in G.es.attributes() else None
+            straightness_values = straightness_centrality(
+                largest_cc, weight=weight_attr
+            )
             stats["avg_straightness_centrality"] = {
-                "value": "Could not compute",
+                "value": np.mean(straightness_values),
+                "unit": "ratio",
+            }
+            stats["max_straightness_centrality"] = {
+                "value": max(straightness_values),
+                "unit": "ratio",
+            }
+            stats["min_straightness_centrality"] = {
+                "value": min(straightness_values),
+                "unit": "ratio",
+            }
+
+            # Global straightness
+            global_straightness = graph_straightness(largest_cc, weight=weight_attr)
+            stats["global_straightness"] = {
+                "value": global_straightness,
+                "unit": "ratio",
+            }
+
+        else:
+            logger.warning("No coordinate data found for straightness centrality")
+            stats["avg_straightness_centrality"] = {
+                "value": "No coordinate data",
                 "unit": "n/a",
             }
-            stats["global_straightness"] = {"value": "Could not compute", "unit": "n/a"}
-    else:
-        logger.info(
-            f"Skipping straightness measures (graph too large: {largest_cc.vcount()} nodes)"
-        )
+            stats["global_straightness"] = {
+                "value": "No coordinate data",
+                "unit": "n/a",
+            }
+    except Exception as e:
+        logger.warning(f"Failed to compute straightness measures: {e}")
         stats["avg_straightness_centrality"] = {
-            "value": "Skipped (graph too large)",
+            "value": "Could not compute",
             "unit": "n/a",
         }
-        stats["global_straightness"] = {
-            "value": "Skipped (graph too large)",
-            "unit": "n/a",
-        }
+        stats["global_straightness"] = {"value": "Could not compute", "unit": "n/a"}
 
     # Farness centrality (if available)
     if "farness" in G.vs.attributes():

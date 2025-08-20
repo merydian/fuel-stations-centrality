@@ -2,6 +2,7 @@ import igraph as ig
 import osmnx as ox
 import numpy as np
 import logging
+from numba import jit, prange, njit
 
 logger = logging.getLogger(__name__)
 
@@ -135,9 +136,83 @@ def download_graph(place):
         raise
 
 
+@jit(nopython=True, cache=True)
+def _compute_straightness_core(coords_x, coords_y, shortest_paths, n):
+    """
+    Numba-optimized core computation for straightness centrality.
+    
+    Parameters
+    ----------
+    coords_x : numpy.ndarray
+        X coordinates of all nodes
+    coords_y : numpy.ndarray  
+        Y coordinates of all nodes
+    shortest_paths : numpy.ndarray
+        2D array of shortest path distances between all node pairs
+    n : int
+        Number of nodes
+        
+    Returns
+    -------
+    numpy.ndarray
+        Straightness centrality values for all nodes
+    """
+    straightness = np.zeros(n, dtype=np.float64)
+    
+    for i in range(n):
+        si = 0.0
+        valid = 0
+        xi, yi = coords_x[i], coords_y[i]
+        
+        for j in range(n):
+            if i == j:
+                continue
+            
+            d_g = shortest_paths[i, j]
+            if d_g == np.inf:
+                continue  # disconnected
+                
+            xj, yj = coords_x[j], coords_y[j]
+            d_e = np.sqrt((xi - xj)**2 + (yi - yj)**2)
+            
+            if d_e > 0:
+                si += d_e / d_g
+                valid += 1
+                
+        straightness[i] = si / valid if valid > 0 else 0.0
+    
+    return straightness
+
+@njit(parallel=True, fastmath=True)
+def _compute_graph_straightness_core(coords_x, coords_y, shortest_paths, n):
+    num = 0.0
+    den = 0
+    
+    for i in prange(n):  # parallel loop
+        xi, yi = coords_x[i], coords_y[i]
+        for j in range(n):
+            if i == j:
+                continue
+                
+            d_g = shortest_paths[i, j]
+            if d_g == np.inf:
+                continue
+                
+            xj, yj = coords_x[j], coords_y[j]
+            d_e = np.sqrt((xi - xj)**2 + (yi - yj)**2)
+            
+            if d_e > 0:
+                num += d_e / d_g
+                den += 1
+    
+    return num / den if den > 0 else 0.0
+
+
+
 def straightness_centrality(g: ig.Graph, weight: str = None):
     """
     Compute straightness centrality for all nodes in a graph.
+    Uses Numba JIT compilation for significant performance improvements.
 
     Parameters
     ----------
@@ -153,40 +228,34 @@ def straightness_centrality(g: ig.Graph, weight: str = None):
         Straightness centrality for each node.
     """
     n = g.vcount()
-    straightness = [0.0] * n
+    
+    if n == 0:
+        return []
+        
+    logger.info(f"Computing straightness centrality for {n} nodes using {'Numba JIT'}")
+    
+    # Extract node coordinates as numpy arrays for Numba optimization
+    coords_x = np.array([v["x"] for v in g.vs], dtype=np.float64)
+    coords_y = np.array([v["y"] for v in g.vs], dtype=np.float64)
 
-    # Extract node coordinates from attributes
-    coords = {v.index: (v["x"], v["y"]) for v in g.vs}
-
-    # Precompute all shortest path lengths
+    # Precompute all shortest path lengths as numpy array
+    logger.debug("Computing shortest paths...")
     if weight and weight in g.es.attributes():
-        dG = g.shortest_paths_dijkstra(weights=weight)
+        shortest_paths = np.array(g.shortest_paths_dijkstra(weights=weight), dtype=np.float64)
     else:
-        dG = g.shortest_paths_dijkstra()
-
-    for i in range(n):
-        si = 0
-        valid = 0
-        xi, yi = coords[i]
-        for j in range(n):
-            if i == j:
-                continue
-            d_g = dG[i][j]
-            if d_g == float("inf"):
-                continue  # disconnected
-            xj, yj = coords[j]
-            d_e = np.hypot(float(xi) - float(xj), float(yi) - float(yj))
-            if d_e > 0:
-                si += d_e / d_g
-                valid += 1
-        straightness[i] = si / valid if valid > 0 else 0.0
-
-    return straightness
+        shortest_paths = np.array(g.shortest_paths_dijkstra(), dtype=np.float64)
+    
+    logger.debug("Computing straightness centrality...")
+    
+    # Use optimized Numba implementation
+    straightness = _compute_straightness_core(coords_x, coords_y, shortest_paths, n)
+    return straightness.tolist()
 
 
 def graph_straightness(g: ig.Graph, weight: str = None):
     """
     Compute global straightness centrality for a graph.
+    Uses Numba JIT compilation for significant performance improvements.
 
     Parameters
     ----------
@@ -202,30 +271,23 @@ def graph_straightness(g: ig.Graph, weight: str = None):
         Global straightness centrality (graph-level detour index).
     """
     n = g.vcount()
+    
+    if n == 0:
+        return 0.0
+        
+    logger.info(f"Computing global graph straightness for {n} nodes using 'Numba JIT'")
 
-    # Extract node coordinates
-    coords = {v.index: (v["x"], v["y"]) for v in g.vs}
+    # Extract node coordinates as numpy arrays for Numba optimization
+    coords_x = np.array([v["x"] for v in g.vs], dtype=np.float64)
+    coords_y = np.array([v["y"] for v in g.vs], dtype=np.float64)
 
-    # All-pairs shortest paths
+    # All-pairs shortest paths as numpy array
+    logger.debug("Computing shortest paths...")
     if weight and weight in g.es.attributes():
-        dG = g.shortest_paths_dijkstra(weights=weight)
+        shortest_paths = np.array(g.shortest_paths_dijkstra(weights=weight), dtype=np.float64)
     else:
-        dG = g.shortest_paths_dijkstra()
+        shortest_paths = np.array(g.shortest_paths_dijkstra(), dtype=np.float64)
 
-    num, den = 0.0, 0
-
-    for i in range(n):
-        xi, yi = coords[i]
-        for j in range(n):
-            if i == j:
-                continue
-            d_g = dG[i][j]
-            if d_g == float("inf"):
-                continue  # disconnected pair
-            xj, yj = coords[j]
-            d_e = np.hypot(float(xi) - float(xj), float(yi) - float(yj))
-            if d_e > 0:
-                num += d_e / d_g
-                den += 1
-
-    return num / den if den > 0 else 0.0
+    logger.debug("Computing global straightness...")
+    
+    return _compute_graph_straightness_core(coords_x, coords_y, shortest_paths, n)

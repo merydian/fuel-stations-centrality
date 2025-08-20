@@ -6,6 +6,9 @@ import random
 import pyproj
 from shapely.ops import transform
 import osmnx as ox
+from config import Config
+import time
+import igraph as ig
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +26,6 @@ def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpk
     logger.debug("Converting graph nodes to GeoDataFrame...")
     node_geoms = []
     node_ids = []
-
-    # List all vertex attribute names
-    print(G.vs.attributes())
 
     for i in range(G.vcount()):
         lon = G.vs[i]["x"]
@@ -461,4 +461,351 @@ def get_gas_stations_from_graph(G):
     except Exception as e:
         logger.error(f"Failed to extract gas stations: {e}")
         raise
-        raise
+
+def create_base_convex_hull(stations):
+    """
+    Create a convex hull from station coordinates for consistent geometric analysis.
+    
+    Args:
+        stations: GeoDataFrame with fuel station data
+        
+    Returns:
+        Polygon representing the convex hull of all stations
+    """
+    try:
+        from shapely.geometry import MultiPoint
+        
+        # Extract coordinates from stations
+        coords = [(station.geometry.x, station.geometry.y) for _, station in stations.iterrows()]
+        
+        if len(coords) < 3:
+            logger.warning("Not enough stations to create convex hull")
+            return None
+            
+        # Create MultiPoint and get convex hull
+        points = MultiPoint(coords)
+        convex_hull = points.convex_hull
+        
+        logger.info(f"✓ Created convex hull from {len(coords)} station coordinates")
+        return convex_hull
+        
+    except Exception as e:
+        logger.error(f"Error creating convex hull: {e}")
+        return None
+
+
+# Configure logging with more detailed format
+def setup_logging():
+    """Set up comprehensive logging configuration."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.FileHandler(Config.LOG_FILE, mode="w"),
+            logging.StreamHandler(),
+        ],
+    )
+
+    # Set specific log levels for different modules
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+    logging.getLogger("requests").setLevel(logging.WARNING)
+    logging.getLogger("fiona").setLevel(logging.WARNING)
+    logging.getLogger("geopandas").setLevel(logging.WARNING)
+    logging.getLogger("shapely").setLevel(logging.WARNING)
+    logging.getLogger("pyproj").setLevel(logging.WARNING)
+
+
+def log_step_start(step_num, description):
+    """Log the start of a major step with timing."""
+    logger = logging.getLogger(__name__)
+    logger.info("=" * 60)
+    logger.info(f"STEP {step_num}: {description}")
+    logger.info("=" * 60)
+    return time.time()
+
+
+def log_step_end(start_time, step_num, description):
+    """Log the completion of a major step with duration."""
+    logger = logging.getLogger(__name__)
+    duration = time.time() - start_time
+    logger.info(f"STEP {step_num} COMPLETED: {description} (Duration: {duration:.2f}s)")
+    logger.info("-" * 60)
+
+
+def log_step_start(step_num, description):
+    """Log the start of a processing step and return timestamp."""
+    timestamp = time.time()
+    logger.info("=" * 60)
+    logger.info(f"STEP {step_num}: {description.upper()}")
+    logger.info("=" * 60)
+    return timestamp
+
+
+def find_stations_in_road_network(G_road, stations):
+    """
+    Find the road network nodes that correspond to fuel stations.
+    
+    Args:
+        G_road: NetworkX road network graph
+        stations: GeoDataFrame with fuel station data
+        
+    Returns:
+        Dictionary mapping station indices to road network node IDs
+    """
+    try:
+        import numpy as np
+        from scipy.spatial import cKDTree
+        
+        # Get road network node coordinates
+        road_nodes = []
+        road_node_ids = []
+        for node_id, data in G_road.nodes(data=True):
+            road_nodes.append([data['x'], data['y']])
+            road_node_ids.append(node_id)
+        
+        road_nodes = np.array(road_nodes)
+        
+        # Build KDTree for efficient nearest neighbor search
+        tree = cKDTree(road_nodes)
+        
+        # Find nearest road nodes for each station
+        station_to_node = {}
+        for idx, station in stations.iterrows():
+            station_coords = np.array([station.geometry.x, station.geometry.y])
+            
+            # Find nearest road node
+            distance, nearest_idx = tree.query(station_coords)
+            nearest_node_id = road_node_ids[nearest_idx]
+            
+            station_to_node[idx] = nearest_node_id
+            
+        logger.info(f"✓ Mapped {len(station_to_node)} stations to road network nodes")
+        return station_to_node
+        
+    except Exception as e:
+        logger.error(f"Error mapping stations to road network: {e}")
+        return {}
+
+
+def remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove):
+    """
+    Remove station nodes from the road network.
+    
+    Args:
+        G_road: NetworkX road network graph
+        station_to_node_mapping: Dictionary mapping station indices to road network node IDs
+        stations_to_remove: List of station indices to remove
+        
+    Returns:
+        Modified NetworkX graph with station nodes removed
+    """
+    try:
+        G_filtered = G_road.copy()
+        nodes_to_remove = []
+        
+        # Collect nodes to remove
+        for station_idx in stations_to_remove:
+            if station_idx in station_to_node_mapping:
+                node_id = station_to_node_mapping[station_idx]
+                if node_id in G_filtered:
+                    nodes_to_remove.append(node_id)
+        
+        # Remove nodes from graph
+        G_filtered.remove_nodes_from(nodes_to_remove)
+        
+        logger.info(f"✓ Removed {len(nodes_to_remove)} station nodes from road network")
+        logger.info(f"  Road network: {G_road.number_of_nodes()} → {G_filtered.number_of_nodes()} nodes")
+        logger.info(f"  Road network: {G_road.number_of_edges()} → {G_filtered.number_of_edges()} edges")
+        
+        return G_filtered
+        
+    except Exception as e:
+        logger.error(f"Error removing stations from road network: {e}")
+        return G_road.copy()
+
+
+def convert_networkx_to_igraph(G_nx):
+    """
+    Convert NetworkX graph to igraph for centrality calculations.
+    
+    Args:
+        G_nx: NetworkX graph
+        
+    Returns:
+        igraph.Graph with equivalent structure
+    """
+    try:
+        import igraph as ig
+        import numpy as np
+        
+        # Create node mapping
+        node_list = list(G_nx.nodes())
+        node_to_idx = {node: idx for idx, node in enumerate(node_list)}
+        
+        # Create edges for igraph
+        edges = []
+        edge_weights = []
+        
+        for u, v, data in G_nx.edges(data=True):
+            edges.append((node_to_idx[u], node_to_idx[v]))
+            # Use 'length' or 'weight' attribute, defaulting to 1.0
+            weight = data.get('length', data.get('weight', 1.0))
+            edge_weights.append(weight)
+        
+        # Create igraph
+        G_ig = ig.Graph(n=len(node_list), edges=edges, directed=False)
+        G_ig.es['weight'] = edge_weights
+        
+        # Add node attributes
+        for i, node in enumerate(node_list):
+            node_data = G_nx.nodes[node]
+            G_ig.vs[i]['name'] = str(node)
+            G_ig.vs[i]['x'] = node_data.get('x', 0.0)
+            G_ig.vs[i]['y'] = node_data.get('y', 0.0)
+        
+        logger.info(f"✓ Converted NetworkX to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges")
+        return G_ig
+        
+    except Exception as e:
+        logger.error(f"Error converting NetworkX to igraph: {e}")
+        return None
+
+
+def find_stations_in_road_network(G_road, stations_gdf):
+    """
+    Find fuel stations in the road network and return mapping information.
+    
+    Args:
+        G_road: NetworkX road network graph
+        stations_gdf: GeoDataFrame of fuel stations
+    
+    Returns:
+        dict: Mapping from station index to road network node
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Mapping fuel stations to road network nodes...")
+    
+    # Get road network nodes as GeoDataFrame
+    road_nodes_gdf = ox.graph_to_gdfs(G_road, edges=False)
+    
+    # Auto-detect appropriate projected CRS based on the centroid
+    try:
+        # Get the centroid of the road network to determine appropriate UTM zone
+        bounds = road_nodes_gdf.total_bounds
+        center_lon = (bounds[0] + bounds[2]) / 2
+        center_lat = (bounds[1] + bounds[3]) / 2
+        
+        # Calculate UTM zone
+        utm_zone = int((center_lon + 180) / 6) + 1
+        hemisphere = 'N' if center_lat >= 0 else 'S'
+        epsg_code = 32600 + utm_zone if hemisphere == 'N' else 32700 + utm_zone
+        projected_crs = f'EPSG:{epsg_code}'
+        
+        logger.info(f"Using projected CRS: {projected_crs} for accurate distance calculations")
+        
+        # Project both geometries to the same projected CRS
+        road_nodes_projected = road_nodes_gdf.to_crs(projected_crs)
+        stations_projected = stations_gdf.to_crs(projected_crs)
+        
+        station_to_node_mapping = {}
+        
+        for idx, station in stations_projected.iterrows():
+            # Find nearest road network node to each station
+            station_point = station.geometry
+            
+            # Calculate distances to all road nodes (now in meters)
+            distances = road_nodes_projected.geometry.distance(station_point)
+            nearest_node_idx = distances.idxmin()
+            
+            station_to_node_mapping[idx] = nearest_node_idx
+            
+        logger.info(f"✓ Mapped {len(station_to_node_mapping)} stations to road network nodes using {projected_crs}")
+        
+    except Exception as e:
+        logger.warning(f"CRS projection failed, falling back to geographic distances: {e}")
+        # Fallback to original method if projection fails
+        station_to_node_mapping = {}
+        
+        for idx, station in stations_gdf.iterrows():
+            # Find nearest road network node to each station
+            station_point = station.geometry
+            
+            # Calculate distances to all road nodes
+            distances = road_nodes_gdf.geometry.distance(station_point)
+            nearest_node_idx = distances.idxmin()
+            
+            station_to_node_mapping[idx] = nearest_node_idx
+            
+        logger.info(f"✓ Mapped {len(station_to_node_mapping)} stations to road network nodes (using geographic CRS)")
+    
+    return station_to_node_mapping
+
+
+def remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove):
+    """
+    Remove station-related nodes from the road network.
+    
+    Args:
+        G_road: NetworkX road network graph
+        station_to_node_mapping: Mapping from station index to road node
+        stations_to_remove: List of station indices to remove
+    
+    Returns:
+        NetworkX graph with stations removed
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Get road nodes to remove
+    nodes_to_remove = [station_to_node_mapping[station_idx] 
+                      for station_idx in stations_to_remove 
+                      if station_idx in station_to_node_mapping]
+    
+    logger.info(f"Removing {len(nodes_to_remove)} nodes from road network (corresponding to {len(stations_to_remove)} stations)")
+    
+    # Create copy and remove nodes
+    G_modified = G_road.copy()
+    G_modified.remove_nodes_from(nodes_to_remove)
+    
+    logger.info(f"✓ Road network modified: {len(G_road.nodes)} → {len(G_modified.nodes)} nodes")
+    
+    return G_modified
+
+
+def convert_networkx_to_igraph(G_nx):
+    """
+    Convert NetworkX graph to igraph with proper attributes.
+    
+    Args:
+        G_nx: NetworkX graph
+    
+    Returns:
+        igraph Graph
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Converting NetworkX graph to igraph...")
+    
+    # Convert to igraph
+    G_ig = ig.Graph.from_networkx(G_nx)
+    
+    logger.info(f"✓ Converted to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges")
+    
+    return G_ig
+
+
+def process_fuel_stations(stations, max_stations=None):
+    """Process and validate fuel stations data."""
+    logger = logging.getLogger(__name__)
+    
+    original_count = len(stations)
+    
+    # Limit number of stations if needed
+    if max_stations and len(stations) > max_stations:
+        logger.warning(f"Found {len(stations)} stations, limiting to {max_stations} for performance")
+        stations = stations.sample(n=max_stations, random_state=Config.RANDOM_SEED).reset_index(drop=True)
+
+    logger.info(f"✓ Fuel stations processed: {len(stations)} stations")
+
+    if len(stations) < Config.MIN_STATIONS_REQUIRED:
+        raise ValueError(f"Insufficient fuel stations: {len(stations)} < {Config.MIN_STATIONS_REQUIRED} minimum required")
+    
+    return stations

@@ -19,8 +19,6 @@ class Config:
     # Data limits
     MAX_STATIONS_FOR_ANALYSIS = 100
     MIN_STATIONS_REQUIRED = 10
-    MAX_NODES_FOR_BETWEENNESS = 10000
-    MAX_NODES_FOR_STRAIGHTNESS = 20000
     
     # Random seed for reproducibility
     RANDOM_SEED = 42
@@ -61,5 +59,7 @@ class Config:
         if cls.K_NN <= 0:
             raise ValueError("K_NN must be positive")
         
+        if cls.MAX_DISTANCE <= 0:
+            raise ValueError("MAX_DISTANCE must be positive")
         if cls.MAX_DISTANCE <= 0:
             raise ValueError("MAX_DISTANCE must be positive")
