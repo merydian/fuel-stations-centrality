@@ -12,9 +12,12 @@ class Config:
     # Analysis parameters
     PLACE = "Heidelberg, Germany"
     MAX_DISTANCE = 20000  # meters
-    N_REMOVE = 5
+    N_REMOVE = 50
     K_NN = 5
     REMOVAL_KIND = "knn_dist"
+    
+    # Distance calculation method
+    USE_ORS_FOR_STATIONS = False  # Set to True to use OpenRouteService, False to use road network
     
     # Data limits
     MAX_STATIONS_FOR_ANALYSIS = 100
@@ -50,8 +53,8 @@ class Config:
     @classmethod
     def validate_config(cls):
         """Validate configuration parameters."""
-        if not cls.ORS_API_KEY:
-            raise ValueError("ORS_API_KEY environment variable is required")
+        if cls.USE_ORS_FOR_STATIONS and not cls.ORS_API_KEY:
+            raise ValueError("ORS_API_KEY environment variable is required when USE_ORS_FOR_STATIONS is True")
         
         if cls.N_REMOVE <= 0:
             raise ValueError("N_REMOVE must be positive")

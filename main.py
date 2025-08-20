@@ -62,6 +62,7 @@ def main():
     logger.info(f"  • Stations to remove: {Config.N_REMOVE}")
     logger.info(f"  • k-NN parameter: {Config.K_NN}")
     logger.info(f"  • Removal criteria: {Config.REMOVAL_KIND}")
+    logger.info(f"  • Distance method: {'OpenRouteService API' if Config.USE_ORS_FOR_STATIONS else 'Road Network'}")
     logger.info(f"  • ORS API Key: {'✓ SET' if Config.ORS_API_KEY else '✗ NOT SET'}")
     logger.info("")
 
@@ -76,24 +77,39 @@ def main():
         stations = get_gas_stations_from_graph(G_road)
         log_step_end(step_start, "1", "Fuel station extraction")
 
-        # Step 2: Create stations connectivity graph for analysis
-        step_start = log_step_start("2", "Building station connectivity graph for k-NN analysis")
-        logger.info("  Using OpenRouteService API for precise driving distances...")
-        G_stations = make_graph_from_stations(stations, api_key=Config.ORS_API_KEY)
-        logger.info(f"✓ Station graph created: {G_stations.vcount()} nodes, {G_stations.ecount()} edges")
-        log_step_end(step_start, "2", "Station graph creation")
+        # Step 2: Map stations to road network (needed for both methods)
+        step_start = log_step_start("2", "Mapping stations to road network")
+        station_to_node_mapping = find_stations_in_road_network(G_road, stations)
+        log_step_end(step_start, "2", "Station mapping")
 
-        # Step 3: Analyze stations to find removal candidates
-        step_start = log_step_start("3", "Computing k-NN distances for station analysis")
+        # Step 3: Create stations connectivity graph for analysis
+        step_start = log_step_start("3", "Building station connectivity graph for k-NN analysis")
+        
+        if Config.USE_ORS_FOR_STATIONS:
+            logger.info("  Using OpenRouteService API for precise driving distances...")
+            G_stations = make_graph_from_stations(
+                stations, 
+                api_key=Config.ORS_API_KEY,
+                use_ors=True
+            )
+        else:
+            logger.info("  Using road network for driving distances...")
+            G_stations = make_graph_from_stations(
+                stations,
+                use_ors=False,
+                G_road=G_road,
+                station_to_node_mapping=station_to_node_mapping
+            )
+        
+        logger.info(f"✓ Station graph created: {G_stations.vcount()} nodes, {G_stations.ecount()} edges")
+        log_step_end(step_start, "3", "Station graph creation")
+
+        # Step 4: Analyze stations to find removal candidates
+        step_start = log_step_start("4", "Computing k-NN distances for station analysis")
         logger.info("  Computing farness centrality and k-NN distances on station graph...")
         G_stations, farness_stations, knn_dist = farness_centrality(G_stations, weight="weight", n=Config.K_NN)
         logger.info(f"✓ Station analysis complete: {len(knn_dist)} stations analyzed")
-        log_step_end(step_start, "3", "Station analysis")
-
-        # Step 4: Map stations to road network
-        step_start = log_step_start("4", "Mapping stations to road network")
-        station_to_node_mapping = find_stations_in_road_network(G_road, stations)
-        log_step_end(step_start, "4", "Station mapping")
+        log_step_end(step_start, "4", "Station analysis")
 
         # Step 5: Convert road network to igraph for centrality analysis
         step_start = log_step_start("5", "Converting road network for centrality analysis")
@@ -168,12 +184,21 @@ def main():
         logger.info("✓ Filtered road networks saved")
         log_step_end(step_start, "12", "Filtered network save")
 
-                # Step 13: Compare and log results
+        # Step 13: Compare and log results
         step_start = log_step_start("13", "Comparing baseline vs filtered road networks")
         
         logger.info("=" * 60)
         logger.info("                    ANALYSIS COMPLETE")
         logger.info("=" * 60)
+        
+        # Helper function to calculate percentage change
+        def calc_percentage_change(old_val, new_val):
+            """Calculate percentage change between two values."""
+            if isinstance(old_val, (int, float)) and isinstance(new_val, (int, float)):
+                if old_val == 0:
+                    return "N/A" if new_val == 0 else "∞"
+                return f"{((new_val - old_val) / old_val) * 100:+.2f}%"
+            return "N/A"
         
         # Log baseline road network stats
         logger.info("📊 BASELINE ROAD NETWORK STATISTICS:")
@@ -193,12 +218,37 @@ def main():
         logger.info(f"   • Nodes: {smart_stats['num_nodes']['value']:,} (Δ: {smart_stats['num_nodes']['value'] - old_stats['num_nodes']['value']:+,})")
         logger.info(f"   • Edges: {smart_stats['num_edges']['value']:,} (Δ: {smart_stats['num_edges']['value'] - old_stats['num_edges']['value']:+,})")
         logger.info(f"   • Density: {smart_stats['density']['value']:.6f} (Δ: {smart_stats['density']['value'] - old_stats['density']['value']:+.6f})")
-        logger.info(f"   • Mean degree centrality: {smart_stats.get('avg_degree_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean closeness centrality: {smart_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean betweenness centrality: {smart_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean eigenvector centrality: {smart_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean straightness centrality: {smart_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Global straightness: {smart_stats.get('global_straightness', {}).get('value', 'N/A')}")
+        
+        # Centrality measures with percentage changes
+        smart_deg_cent = smart_stats.get('avg_degree_centrality', {}).get('value', 'N/A')
+        old_deg_cent = old_stats.get('avg_degree_centrality', {}).get('value', 'N/A')
+        deg_cent_change = calc_percentage_change(old_deg_cent, smart_deg_cent)
+        logger.info(f"   • Mean degree centrality: {smart_deg_cent} ({deg_cent_change})")
+        
+        smart_close_cent = smart_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')
+        old_close_cent = old_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')
+        close_cent_change = calc_percentage_change(old_close_cent, smart_close_cent)
+        logger.info(f"   • Mean closeness centrality: {smart_close_cent} ({close_cent_change})")
+        
+        smart_between_cent = smart_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')
+        old_between_cent = old_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')
+        between_cent_change = calc_percentage_change(old_between_cent, smart_between_cent)
+        logger.info(f"   • Mean betweenness centrality: {smart_between_cent} ({between_cent_change})")
+        
+        smart_eigen_cent = smart_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')
+        old_eigen_cent = old_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')
+        eigen_cent_change = calc_percentage_change(old_eigen_cent, smart_eigen_cent)
+        logger.info(f"   • Mean eigenvector centrality: {smart_eigen_cent} ({eigen_cent_change})")
+        
+        smart_straight_cent = smart_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')
+        old_straight_cent = old_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')
+        straight_cent_change = calc_percentage_change(old_straight_cent, smart_straight_cent)
+        logger.info(f"   • Mean straightness centrality: {smart_straight_cent} ({straight_cent_change})")
+        
+        smart_global_straight = smart_stats.get('global_straightness', {}).get('value', 'N/A')
+        old_global_straight = old_stats.get('global_straightness', {}).get('value', 'N/A')
+        global_straight_change = calc_percentage_change(old_global_straight, smart_global_straight)
+        logger.info(f"   • Global straightness: {smart_global_straight} ({global_straight_change})")
         
         # Log random-filtered road network stats
         logger.info("")
@@ -206,12 +256,31 @@ def main():
         logger.info(f"   • Nodes: {random_stats['num_nodes']['value']:,} (Δ: {random_stats['num_nodes']['value'] - old_stats['num_nodes']['value']:+,})")
         logger.info(f"   • Edges: {random_stats['num_edges']['value']:,} (Δ: {random_stats['num_edges']['value'] - old_stats['num_edges']['value']:+,})")
         logger.info(f"   • Density: {random_stats['density']['value']:.6f} (Δ: {random_stats['density']['value'] - old_stats['density']['value']:+.6f})")
-        logger.info(f"   • Mean degree centrality: {random_stats.get('avg_degree_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean closeness centrality: {random_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean betweenness centrality: {random_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean eigenvector centrality: {random_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Mean straightness centrality: {random_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')}")
-        logger.info(f"   • Global straightness: {random_stats.get('global_straightness', {}).get('value', 'N/A')}")
+        
+        # Centrality measures with percentage changes for random
+        random_deg_cent = random_stats.get('avg_degree_centrality', {}).get('value', 'N/A')
+        random_deg_cent_change = calc_percentage_change(old_deg_cent, random_deg_cent)
+        logger.info(f"   • Mean degree centrality: {random_deg_cent} ({random_deg_cent_change})")
+        
+        random_close_cent = random_stats.get('avg_closeness_centrality', {}).get('value', 'N/A')
+        random_close_cent_change = calc_percentage_change(old_close_cent, random_close_cent)
+        logger.info(f"   • Mean closeness centrality: {random_close_cent} ({random_close_cent_change})")
+        
+        random_between_cent = random_stats.get('avg_betweenness_centrality', {}).get('value', 'N/A')
+        random_between_cent_change = calc_percentage_change(old_between_cent, random_between_cent)
+        logger.info(f"   • Mean betweenness centrality: {random_between_cent} ({random_between_cent_change})")
+        
+        random_eigen_cent = random_stats.get('avg_eigenvector_centrality', {}).get('value', 'N/A')
+        random_eigen_cent_change = calc_percentage_change(old_eigen_cent, random_eigen_cent)
+        logger.info(f"   • Mean eigenvector centrality: {random_eigen_cent} ({random_eigen_cent_change})")
+        
+        random_straight_cent = random_stats.get('avg_straightness_centrality', {}).get('value', 'N/A')
+        random_straight_cent_change = calc_percentage_change(old_straight_cent, random_straight_cent)
+        logger.info(f"   • Mean straightness centrality: {random_straight_cent} ({random_straight_cent_change})")
+        
+        random_global_straight = random_stats.get('global_straightness', {}).get('value', 'N/A')
+        random_global_straight_change = calc_percentage_change(old_global_straight, random_global_straight)
+        logger.info(f"   • Global straightness: {random_global_straight} ({random_global_straight_change})")
         
         logger.info("")
         logger.info("📁 Output files saved:")
