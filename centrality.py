@@ -30,9 +30,12 @@ def get_knn_distance(G, weight=None, k=3):
     n = G.vcount()
     knn_distances = {}
 
-    # Get all shortest path distances
+    # Get all shortest path distances with proper weight handling
     logger.debug("Calculating shortest path distances matrix for k-NN...")
-    distances = G.distances()
+    if weight and weight in G.es.attributes():
+        distances = G.distances(weights=weight)
+    else:
+        distances = G.distances()
 
     for i in range(n):
         # Get distances from node i to all other nodes
@@ -64,7 +67,7 @@ def get_knn_distance(G, weight=None, k=3):
         f"Avg {k}-NN distance: {np.mean(list(knn_distances.values())):.2f}"
     )
 
-    return knn_distances
+    return G, knn_distances
 
 
 def farness_centrality(G, weight=None, n=None):
@@ -109,7 +112,7 @@ def farness_centrality(G, weight=None, n=None):
         f"Max farness: {max(farness.values()):.2f}"
     )
 
-    knn_dist = get_knn_distance(G, weight, n)
+    G, knn_dist = get_knn_distance(G, weight, n)
 
     return G, farness, knn_dist
 

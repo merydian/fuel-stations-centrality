@@ -809,3 +809,62 @@ def process_fuel_stations(stations, max_stations=None):
         raise ValueError(f"Insufficient fuel stations: {len(stations)} < {Config.MIN_STATIONS_REQUIRED} minimum required")
     
     return stations
+
+
+def save_removed_stations_to_geopackage(stations_gdf, removed_indices, out_file="removed_stations.gpkg", removal_type="unknown", knn_dist=None):
+    """
+    Save removed stations to GeoPackage.
+    
+    Args:
+        stations_gdf: Original GeoDataFrame with all stations
+        removed_indices: List of station indices that were removed
+        out_file: Output filename for the GeoPackage
+        removal_type: Type of removal (e.g., "smart", "random")
+        knn_dist: Dictionary mapping station indices to k-NN distances (optional)
+    """
+    logger.info(f"Saving {len(removed_indices)} removed stations ({removal_type}) to GeoPackage: {out_file}")
+    
+    # Ensure output directory exists
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        logger.info(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir)
+    
+    # Define output path
+    output_path = f"{output_dir}/{out_file}"
+    
+    try:
+        # Filter stations to only include removed ones
+        removed_stations = stations_gdf[stations_gdf.index.isin(removed_indices)].copy()
+        
+        if removed_stations.empty:
+            logger.warning("No removed stations found to save")
+            return
+        
+        # Add metadata about removal
+        removed_stations['removal_type'] = removal_type
+        removed_stations['removal_order'] = range(1, len(removed_stations) + 1)
+        removed_stations['station_index'] = removed_stations.index
+        
+        # Add k-NN distance data if provided
+        if knn_dist is not None:
+            removed_stations['knn_dist_m'] = removed_stations.index.map(knn_dist)
+            logger.debug(f"Added k-NN distance data for {len([idx for idx in removed_indices if idx in knn_dist])} stations")
+        else:
+            removed_stations['knn_dist_m'] = None
+            logger.debug("No k-NN distance data provided")
+        
+        # Reset index for cleaner output
+        removed_stations = removed_stations.reset_index(drop=True)
+        
+        logger.info(f"Writing {len(removed_stations)} removed stations to {output_path}...")
+        removed_stations.to_file(output_path, layer="removed_stations", driver="GPKG")
+        
+        logger.info(f"Successfully saved removed stations to {output_path}")
+        logger.debug(f"  Removal type: {removal_type}")
+        logger.debug(f"  Number of stations: {len(removed_stations)}")
+        logger.debug(f"  k-NN data included: {'Yes' if knn_dist is not None else 'No'}")
+        
+    except Exception as e:
+        logger.error(f"Failed to save removed stations to {output_path}: {e}")
+        raise

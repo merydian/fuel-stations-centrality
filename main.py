@@ -36,6 +36,7 @@ from utils import (
     remove_stations_from_road_network,
     convert_networkx_to_igraph,
     process_fuel_stations,
+    save_removed_stations_to_geopackage,
 )
 from ors_router import make_graph_from_stations
 
@@ -144,6 +145,16 @@ def main():
         stations_to_remove = [station_id for station_id, _ in sorted_stations[:Config.N_REMOVE]]
         
         logger.info(f"✓ Identified {len(stations_to_remove)} stations for removal: {stations_to_remove}")
+        
+        # Save smart-removed stations to GeoPackage with k-NN distance data
+        save_removed_stations_to_geopackage(
+            stations, 
+            stations_to_remove, 
+            out_file="removed_stations_smart.gpkg", 
+            removal_type="smart_knn",
+            knn_dist=knn_dist
+        )
+        
         log_step_end(step_start, "8", "Station identification")
 
         # Step 9: Remove stations from road network (smart removal)
@@ -159,6 +170,15 @@ def main():
         random.seed(Config.RANDOM_SEED)
         all_station_indices = list(station_to_node_mapping.keys())
         random_stations_to_remove = random.sample(all_station_indices, min(Config.N_REMOVE, len(all_station_indices)))
+        
+        # Save random-removed stations to GeoPackage with k-NN distance data
+        save_removed_stations_to_geopackage(
+            stations, 
+            random_stations_to_remove, 
+            out_file="removed_stations_random.gpkg", 
+            removal_type="random",
+            knn_dist=knn_dist
+        )
         
         G_road_random = remove_stations_from_road_network(G_road, station_to_node_mapping, random_stations_to_remove)
         G_road_random_ig = convert_networkx_to_igraph(G_road_random)
@@ -287,6 +307,8 @@ def main():
         logger.info("   • road_network_baseline.gpkg - Complete road network with centrality measures")
         logger.info("   • road_network_smart_filtered.gpkg - Road network after strategic station removal")
         logger.info("   • road_network_random_filtered.gpkg - Road network after random station removal")
+        logger.info("   • removed_stations_smart.gpkg - Stations removed by smart k-NN analysis")
+        logger.info("   • removed_stations_random.gpkg - Stations removed by random selection")
         
         log_step_end(step_start, "13", "Results comparison")
 

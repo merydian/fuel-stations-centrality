@@ -10,9 +10,9 @@ class Config:
     """Configuration class for analysis parameters."""
     
     # Analysis parameters
-    PLACE = "Heidelberg, Germany"
+    PLACE = "Hamburg, Germany"
     MAX_DISTANCE = 20000  # meters
-    N_REMOVE = 50
+    N_REMOVE = 20
     K_NN = 5
     REMOVAL_KIND = "knn_dist"
     
