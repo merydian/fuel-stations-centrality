@@ -170,16 +170,16 @@ def main():
 
         # Step 9: Remove stations from road network (smart removal)
         step_start = log_step_start("9", "Removing identified stations from road network")
-        G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
-        G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
+        # G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
+        G_road_ig = convert_networkx_to_igraph(G_road)
         
         # Clean up edges far from remaining stations after node removal
         logger.info("  Cleaning up edges far from remaining stations after station removal...")
         # Create filtered stations GeoDataFrame (excluding removed stations)
         remaining_stations = stations[~stations.index.isin(stations_to_remove)]
-        G_road_filtered_ig = remove_edges_far_from_stations(G_road_filtered_ig, remaining_stations, Config.MAX_DISTANCE)
+        G_road_ig = remove_edges_far_from_stations(G_road_ig, remaining_stations, Config.MAX_DISTANCE)
         
-        logger.info(f"✓ Smart-filtered road network: {G_road_filtered_ig.vcount()} nodes, {G_road_filtered_ig.ecount()} edges")
+        logger.info(f"✓ Smart-filtered road network: {G_road_ig.vcount()} nodes, {G_road_ig.ecount()} edges")
         log_step_end(step_start, "9", "Smart station removal")
 
         # Step 10: Create random comparison by removing random stations
@@ -198,34 +198,31 @@ def main():
             knn_dist=knn_dist
         )
         
-        G_road_random = remove_stations_from_road_network(G_road, station_to_node_mapping, random_stations_to_remove)
-        G_road_random_ig = convert_networkx_to_igraph(G_road_random)
-        
         # Clean up edges far from remaining stations after node removal
         logger.info("  Cleaning up edges far from remaining stations after station removal...")
         # Create filtered stations GeoDataFrame (excluding removed stations)
         remaining_stations_random = stations[~stations.index.isin(random_stations_to_remove)]
-        G_road_random_ig = remove_edges_far_from_stations(G_road_random_ig, remaining_stations_random, Config.MAX_DISTANCE)
+        G_road_ig = remove_edges_far_from_stations(G_road_ig, remaining_stations_random, Config.MAX_DISTANCE)
         
-        logger.info(f"✓ Random-filtered road network: {G_road_random_ig.vcount()} nodes, {G_road_random_ig.ecount()} edges")
+        logger.info(f"✓ Random-filtered road network: {G_road_ig.vcount()} nodes, {G_road_ig.ecount()} edges")
         log_step_end(step_start, "10", "Random station removal")
 
         # Step 11: Compute centrality measures on filtered road networks
         step_start = log_step_start("11", "Computing centrality measures on filtered road networks")
         
         logger.info("  Computing statistics for smart-filtered road network...")
-        smart_stats = get_graph_stats(G_road_filtered_ig, base_convex_hull=base_convex_hull)
+        smart_stats = get_graph_stats(G_road_ig, base_convex_hull=base_convex_hull)
         
         logger.info("  Computing statistics for random-filtered road network...")
-        random_stats = get_graph_stats(G_road_random_ig, base_convex_hull=base_convex_hull)
+        random_stats = get_graph_stats(G_road_ig, base_convex_hull=base_convex_hull)
         
         logger.info("✓ Centrality measures computed for both filtered networks")
         log_step_end(step_start, "11", "Filtered network analysis")
 
         # Step 12: Save filtered road networks
         step_start = log_step_start("12", "Saving filtered road networks")
-        save_graph_to_geopackage(G_road_filtered_ig, out_file="road_network_smart_filtered.gpkg")
-        save_graph_to_geopackage(G_road_random_ig, out_file="road_network_random_filtered.gpkg")
+        save_graph_to_geopackage(G_road_ig, out_file="road_network_smart_filtered.gpkg")
+        save_graph_to_geopackage(G_road_ig, out_file="road_network_random_filtered.gpkg")
         logger.info("✓ Filtered road networks saved")
         log_step_end(step_start, "12", "Filtered network save")
 
