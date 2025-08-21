@@ -344,7 +344,9 @@ def make_graph_from_stations_ors(
                 edges.append((i, j))
                 weight = distances[i, j]
                 weights.append(weight)
-                lengths.append(weight)  # Store as both weight and length for compatibility
+                lengths.append(
+                    weight
+                )  # Store as both weight and length for compatibility
                 if weight != np.inf:
                     finite_edges += 1
 

@@ -5,7 +5,6 @@ from shapely.geometry import Point, MultiPoint, Polygon
 from shapely.ops import transform
 from scipy.spatial import Voronoi
 from centrality import straightness_centrality, graph_straightness
-from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +280,9 @@ def get_graph_stats(G, base_convex_hull=None):
     try:
         # Check if weight attribute exists, use it if available
         weight_attr = "weight" if "weight" in G.es.attributes() else None
-        closeness_centrality = largest_cc.closeness(weights=weight_attr, normalized=True)
+        closeness_centrality = largest_cc.closeness(
+            weights=weight_attr, normalized=True
+        )
         stats["avg_closeness_centrality"] = {
             "value": np.mean(closeness_centrality),
             "unit": "normalized ratio",
@@ -302,8 +303,10 @@ def get_graph_stats(G, base_convex_hull=None):
         # Normalize manually since igraph doesn't support normalized parameter consistently
         n = largest_cc.vcount()
         normalization_factor = 2.0 / ((n - 1) * (n - 2)) if n > 2 else 1.0
-        normalized_betweenness = [b * normalization_factor for b in betweenness_centrality]
-        
+        normalized_betweenness = [
+            b * normalization_factor for b in betweenness_centrality
+        ]
+
         stats["avg_betweenness_centrality"] = {
             "value": np.mean(normalized_betweenness),
             "unit": "normalized ratio",
@@ -321,7 +324,9 @@ def get_graph_stats(G, base_convex_hull=None):
         try:
             # Check if weight attribute exists, use it if available
             weight_attr = "weight" if "weight" in G.es.attributes() else None
-            eigenvector_centrality = largest_cc.eigenvector_centrality(weights=weight_attr)
+            eigenvector_centrality = largest_cc.eigenvector_centrality(
+                weights=weight_attr
+            )
             stats["avg_eigenvector_centrality"] = {
                 "value": np.mean(eigenvector_centrality),
                 "unit": "normalized ratio",

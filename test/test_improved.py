@@ -10,7 +10,7 @@ from main_improved import main
 logging.basicConfig(level=logging.INFO)
 
 # Test configuration
-Config.PLACE = "Heidelberg, Germany" 
+Config.PLACE = "Heidelberg, Germany"
 Config.N_REMOVE = 2  # Smaller for faster testing
 Config.K_NN = 3
 
