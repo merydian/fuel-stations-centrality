@@ -17,7 +17,7 @@ class Config:
     REMOVAL_KIND = "knn_dist"
 
     USE_LOCAL_PBF = True
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "hamburg-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
 
     # Distance calculation method
     USE_ORS_FOR_STATIONS = (
