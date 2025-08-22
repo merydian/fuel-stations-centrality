@@ -17,7 +17,6 @@ from utils import (
     save_graph_to_geopackage,
     remove_edges_far_from_stations,
     get_gas_stations_from_graph,
-    create_base_convex_hull,
     setup_logging,
     log_step_start,
     log_step_end,
