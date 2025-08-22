@@ -1054,12 +1054,7 @@ def process_fuel_stations(stations, max_stations=None):
         )
 
     return stations
-        logger.debug(f"  Number of stations: {len(removed_stations)}")
-        logger.debug(f"  k-NN data included: {'Yes' if knn_dist is not None else 'No'}")
 
-    except Exception as e:
-        logger.error(f"Failed to save removed stations to {output_path}: {e}")
-        raise
 
 
 def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg", suffix=None):
