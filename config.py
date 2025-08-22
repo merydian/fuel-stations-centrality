@@ -16,7 +16,6 @@ class Config:
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-
     USE_LOCAL_PBF = True
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / "hamburg-latest.osm"
 
@@ -43,6 +42,9 @@ class Config:
 
     # API configuration
     ORS_API_KEY = os.getenv("ORS_API_KEY")
+
+    # Coordinate Reference System (CRS)
+    EPSG_CODE = 32642  # Default: WGS84
 
     @classmethod
     def ensure_directories(cls):

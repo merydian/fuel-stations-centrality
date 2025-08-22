@@ -33,7 +33,7 @@ def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpk
         node_geoms.append(Point(lon, lat))
         node_ids.append(i)
     gdf_nodes = gpd.GeoDataFrame(
-        {"node_id": node_ids}, geometry=node_geoms, crs="EPSG:4326"
+        {"node_id": node_ids}, geometry=node_geoms, crs=f"EPSG:{Config.EPSG_CODE}"
     )
     logger.debug(f"Created nodes GeoDataFrame with {len(gdf_nodes)} features")
 
@@ -62,7 +62,7 @@ def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpk
     gdf_edges = gpd.GeoDataFrame(
         {"source": src_ids, "target": dst_ids, "distance_m": weights},
         geometry=edge_geoms,
-        crs="EPSG:4326",
+        crs=f"EPSG:{Config.EPSG_CODE}",
     )
     logger.debug(
         f"Created edges GeoDataFrame with {len(gdf_edges)} features "
@@ -111,7 +111,7 @@ def graph_to_gdf(G):
             }
         )
 
-    gdf_nodes = gpd.GeoDataFrame(nodes, crs="EPSG:4326")
+    gdf_nodes = gpd.GeoDataFrame(nodes, crs=f"EPSG:{Config.EPSG_CODE}")
     logger.debug(
         f"Created GeoDataFrame with {len(gdf_nodes)} features, "
         f"farness data {'included' if farness_available else 'not available'}, "
@@ -121,23 +121,206 @@ def graph_to_gdf(G):
     return gdf_nodes
 
 
-def filter_graph_stations(G, remove_ids):
+def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
     """
-    Remove specified stations from the graph by their node IDs.
+    Save Voronoi diagram from graph to GeoPackage.
 
     Args:
-        G: igraph Graph object
-        remove_ids: List of node IDs to remove from the graph
+        G: igraph Graph object with voronoi_polygons attribute
+        out_file: Output filename for the GeoPackage
+    """
+    logger.info(f"Saving Voronoi diagram to GeoPackage: {out_file}")
+
+    if "voronoi_polygons" not in G.attributes():
+        logger.error("No Voronoi polygons found in graph")
+        raise ValueError("Graph must have voronoi_polygons attribute")
+
+    # Ensure output directory exists
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        logger.info(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir)
+
+    # Define output path
+    output_path = f"{output_dir}/{out_file}"
+
+    if suffix:
+        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
+
+    try:
+        # Create GeoDataFrame for Voronoi polygons
+        voronoi_data = []
+        voronoi_polygons = G["voronoi_polygons"]
+
+        for i in range(G.vcount()):
+            lon = G.vs[i]["x"]
+            lat = G.vs[i]["y"]
+            polygon = voronoi_polygons[i] if i < len(voronoi_polygons) else None
+
+            # Calculate area if polygon is valid
+            area_m2 = 0.0
+            if polygon is not None and not polygon.is_empty:
+                # Transform to UTM for area calculation
+                centroid = polygon.centroid
+                utm_zone = int((centroid.x + 180) / 6) + 1
+                utm_crs = (
+                    f"EPSG:{32600 + utm_zone if centroid.y >= 0 else 32700 + utm_zone}"
+                )
+
+                transformer = pyproj.Transformer.from_crs(
+                    "EPSG:4326", utm_crs, always_xy=True
+                )
+                polygon_utm = transform(transformer.transform, polygon)
+                area_m2 = polygon_utm.area
+
+            voronoi_data.append(
+                {
+                    "node_id": i,
+                    "station_lon": lon,
+                    "station_lat": lat,
+                    "area_m2": area_m2,
+                    "area_km2": area_m2 / 1_000_000,
+                    "geometry": polygon
+                    if polygon is not None
+                    else Point(lon, lat).buffer(
+                        0.001
+                    ),  # Small buffer for invalid polygons
+                }
+            )
+
+        gdf_voronoi = gpd.GeoDataFrame(voronoi_data, crs=f"EPSG:{Config.EPSG_CODE}")
+        logger.debug(f"Created Voronoi GeoDataFrame with {len(gdf_voronoi)} features")
+
+        # Create GeoDataFrame for clipping convex hull (the one used for Voronoi clipping)
+        convex_hull = G.get("voronoi_convex_hull")
+        if convex_hull is not None:
+            gdf_hull = gpd.GeoDataFrame(
+                {
+                    "description": ["Convex hull used for Voronoi clipping"],
+                    "type": ["clipping_hull"],
+                },
+                geometry=[convex_hull],
+                crs=f"EPSG:{Config.EPSG_CODE}",
+            )
+        else:
+            logger.warning("No convex hull found in graph")
+            gdf_hull = None
+
+        # Create GeoDataFrame for base convex hull (original stations) if different
+        base_convex_hull = G.get("base_convex_hull")
+        if base_convex_hull is not None and base_convex_hull != convex_hull:
+            gdf_base_hull = gpd.GeoDataFrame(
+                {
+                    "description": ["Original stations convex hull"],
+                    "type": ["base_hull"],
+                },
+                geometry=[base_convex_hull],
+                crs=f"EPSG:{Config.EPSG_CODE}",
+            )
+        else:
+            gdf_base_hull = None
+
+        # Save to GeoPackage
+        logger.info(f"Writing Voronoi data to {output_path}...")
+
+        gdf_voronoi.to_file(output_path, layer="voronoi_polygons", driver="GPKG")
+
+        if gdf_hull is not None:
+            gdf_hull.to_file(output_path, layer="convex_hull", driver="GPKG")
+
+        if gdf_base_hull is not None:
+            gdf_base_hull.to_file(output_path, layer="base_convex_hull", driver="GPKG")
+
+        # Add station points for reference
+        station_points = []
+        for i in range(G.vcount()):
+            lon = G.vs[i]["x"]
+            lat = G.vs[i]["y"]
+            farness_val = G.vs[i].get("farness", 0)
+            knn_dist_val = G.vs[i].get("knn_dist", 0)
+            station_points.append(
+                {
+                    "node_id": i,
+                    "farness": farness_val,
+                    "knn_dist": knn_dist_val,
+                    "geometry": Point(lon, lat),
+                }
+            )
+
+        gdf_stations = gpd.GeoDataFrame(station_points, crs=f"EPSG:{Config.EPSG_CODE}")
+        gdf_stations.to_file(output_path, layer="stations", driver="GPKG")
+
+        layers_saved = ["voronoi_polygons", "stations"]
+        if gdf_hull is not None:
+            layers_saved.append("convex_hull")
+        if gdf_base_hull is not None:
+            layers_saved.append("base_convex_hull")
+
+        logger.info(f"Successfully saved Voronoi diagram to {output_path}")
+        logger.info(f"Layers saved: {', '.join(layers_saved)}")
+
+    except Exception as e:
+        logger.error(f"Failed to save Voronoi diagram to {output_path}: {e}")
+        raise
+
+
+def get_gas_stations_from_graph(G, area_polygon=None):
+    """
+    Get gas stations within the area of a NetworkX graph from OSMnx.
+
+    Args:
+        G: NetworkX graph from osmnx
 
     Returns:
-        Modified graph with specified stations removed
+        GeoDataFrame of gas stations with Point geometries
     """
-    logger.info(f"Filtering graph: removing {len(remove_ids)} specified stations")
+    logger.info("Extracting gas stations from OSM using graph boundaries")
 
-    # Remove them from the graph
-    G.delete_vertices(remove_ids)
+    try:
+        # Convert graph nodes to GeoDataFrame
+        nodes_gdf = ox.graph_to_gdfs(G, edges=False)
+        logger.debug(f"Graph has {len(nodes_gdf)} nodes")
 
-    return G
+        # Get convex hull of nodes (this should already be in EPSG:4326)
+        area_polygon = nodes_gdf.unary_union.convex_hull
+        logger.debug("Computed convex hull of graph nodes")
+
+        # Query gas stations within the polygon
+        tags = {"amenity": "fuel"}
+        logger.info("Downloading gas stations from OpenStreetMap...")
+
+        gas_stations = ox.features_from_polygon(area_polygon, tags=tags)
+        logger.info(f"Downloaded {len(gas_stations)} gas station features")
+
+        # Filter to only include valid geometries and convert to points
+        logger.debug("Processing gas station geometries...")
+        gas_points = []
+
+        for idx, station in gas_stations.iterrows():
+            geom = station.geometry
+            if geom is not None and not geom.is_empty:
+                if geom.geom_type == "Point":
+                    gas_points.append(station)
+                elif hasattr(geom, "centroid"):
+                    # Convert polygons/multipolygons to centroids
+                    station_copy = station.copy()
+                    station_copy.geometry = geom.centroid
+                    gas_points.append(station_copy)
+
+        if gas_points:
+            gas_stations_gdf = gpd.GeoDataFrame(gas_points, crs=f"EPSG:{Config.EPSG_CODE}")
+            gas_stations_gdf = gas_stations_gdf.reset_index(drop=True)
+            logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations")
+        else:
+            # Create empty GeoDataFrame with expected structure
+            gas_stations_gdf = gpd.GeoDataFrame(columns=["geometry"], crs=f"EPSG:{Config.EPSG_CODE}")
+            logger.warning("No valid gas stations found")
+
+        return gas_stations_gdf
+
+    except Exception as e:
+        logger.error(f"Failed to extract gas stations: {e}")
+        raise
 
 
 def remove_edges_far_from_stations(
@@ -366,149 +549,6 @@ def remove_random_stations(G, num_remove, seed=None):
     return G
 
 
-def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
-    """
-    Save Voronoi diagram from graph to GeoPackage.
-
-    Args:
-        G: igraph Graph object with voronoi_polygons attribute
-        out_file: Output filename for the GeoPackage
-    """
-    logger.info(f"Saving Voronoi diagram to GeoPackage: {out_file}")
-
-    if "voronoi_polygons" not in G.attributes():
-        logger.error("No Voronoi polygons found in graph")
-        raise ValueError("Graph must have voronoi_polygons attribute")
-
-    # Ensure output directory exists
-    output_dir = "output"
-    if not os.path.exists(output_dir):
-        logger.info(f"Creating output directory: {output_dir}")
-        os.makedirs(output_dir)
-
-    # Define output path
-    output_path = f"{output_dir}/{out_file}"
-
-    if suffix:
-        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
-
-    try:
-        # Create GeoDataFrame for Voronoi polygons
-        voronoi_data = []
-        voronoi_polygons = G["voronoi_polygons"]
-
-        for i in range(G.vcount()):
-            lon = G.vs[i]["x"]
-            lat = G.vs[i]["y"]
-            polygon = voronoi_polygons[i] if i < len(voronoi_polygons) else None
-
-            # Calculate area if polygon is valid
-            area_m2 = 0.0
-            if polygon is not None and not polygon.is_empty:
-                # Transform to UTM for area calculation
-                centroid = polygon.centroid
-                utm_zone = int((centroid.x + 180) / 6) + 1
-                utm_crs = (
-                    f"EPSG:{32600 + utm_zone if centroid.y >= 0 else 32700 + utm_zone}"
-                )
-
-                transformer = pyproj.Transformer.from_crs(
-                    "EPSG:4326", utm_crs, always_xy=True
-                )
-                polygon_utm = transform(transformer.transform, polygon)
-                area_m2 = polygon_utm.area
-
-            voronoi_data.append(
-                {
-                    "node_id": i,
-                    "station_lon": lon,
-                    "station_lat": lat,
-                    "area_m2": area_m2,
-                    "area_km2": area_m2 / 1_000_000,
-                    "geometry": polygon
-                    if polygon is not None
-                    else Point(lon, lat).buffer(
-                        0.001
-                    ),  # Small buffer for invalid polygons
-                }
-            )
-
-        gdf_voronoi = gpd.GeoDataFrame(voronoi_data, crs="EPSG:4326")
-        logger.debug(f"Created Voronoi GeoDataFrame with {len(gdf_voronoi)} features")
-
-        # Create GeoDataFrame for clipping convex hull (the one used for Voronoi clipping)
-        convex_hull = G.get("voronoi_convex_hull")
-        if convex_hull is not None:
-            gdf_hull = gpd.GeoDataFrame(
-                {
-                    "description": ["Convex hull used for Voronoi clipping"],
-                    "type": ["clipping_hull"],
-                },
-                geometry=[convex_hull],
-                crs="EPSG:4326",
-            )
-        else:
-            logger.warning("No convex hull found in graph")
-            gdf_hull = None
-
-        # Create GeoDataFrame for base convex hull (original stations) if different
-        base_convex_hull = G.get("base_convex_hull")
-        if base_convex_hull is not None and base_convex_hull != convex_hull:
-            gdf_base_hull = gpd.GeoDataFrame(
-                {
-                    "description": ["Original stations convex hull"],
-                    "type": ["base_hull"],
-                },
-                geometry=[base_convex_hull],
-                crs="EPSG:4326",
-            )
-        else:
-            gdf_base_hull = None
-
-        # Save to GeoPackage
-        logger.info(f"Writing Voronoi data to {output_path}...")
-
-        gdf_voronoi.to_file(output_path, layer="voronoi_polygons", driver="GPKG")
-
-        if gdf_hull is not None:
-            gdf_hull.to_file(output_path, layer="convex_hull", driver="GPKG")
-
-        if gdf_base_hull is not None:
-            gdf_base_hull.to_file(output_path, layer="base_convex_hull", driver="GPKG")
-
-        # Add station points for reference
-        station_points = []
-        for i in range(G.vcount()):
-            lon = G.vs[i]["x"]
-            lat = G.vs[i]["y"]
-            farness_val = G.vs[i].get("farness", 0)
-            knn_dist_val = G.vs[i].get("knn_dist", 0)
-            station_points.append(
-                {
-                    "node_id": i,
-                    "farness": farness_val,
-                    "knn_dist": knn_dist_val,
-                    "geometry": Point(lon, lat),
-                }
-            )
-
-        gdf_stations = gpd.GeoDataFrame(station_points, crs="EPSG:4326")
-        gdf_stations.to_file(output_path, layer="stations", driver="GPKG")
-
-        layers_saved = ["voronoi_polygons", "stations"]
-        if gdf_hull is not None:
-            layers_saved.append("convex_hull")
-        if gdf_base_hull is not None:
-            layers_saved.append("base_convex_hull")
-
-        logger.info(f"Successfully saved Voronoi diagram to {output_path}")
-        logger.info(f"Layers saved: {', '.join(layers_saved)}")
-
-    except Exception as e:
-        logger.error(f"Failed to save Voronoi diagram to {output_path}: {e}")
-        raise
-
-
 def remove_disconnected_nodes(G):
     """
     Remove all disconnected nodes (nodes with no edges) from the graph.
@@ -547,98 +587,127 @@ def remove_disconnected_nodes(G):
     return G
 
 
-def get_gas_stations_from_graph(G):
+def save_removed_stations_to_geopackage(
+    stations_gdf,
+    removed_indices,
+    out_file="removed_stations.gpkg",
+    removal_type="unknown",
+    knn_dist=None,
+    suffix=None,
+):
     """
-    Get gas stations within the area of a NetworkX graph from OSMnx.
+    Save removed stations to GeoPackage.
 
     Args:
-        G: NetworkX graph from osmnx
-
-    Returns:
-        GeoDataFrame of gas stations with Point geometries
+        stations_gdf: Original GeoDataFrame with all stations
+        removed_indices: List of station indices that were removed
+        out_file: Output filename for the GeoPackage
+        removal_type: Type of removal (e.g., "smart", "random")
+        knn_dist: Dictionary mapping station indices to k-NN distances (optional)
     """
-    logger.info("Extracting gas stations from OSM using graph boundaries")
+    logger.info(
+        f"Saving {len(removed_indices)} removed stations ({removal_type}) to GeoPackage: {out_file}"
+    )
+
+    # Ensure output directory exists
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        logger.info(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir)
+
+    # Define output path
+    output_path = f"{output_dir}/{out_file}"
+
+    if suffix:
+        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
 
     try:
-        # Convert graph nodes to GeoDataFrame
-        nodes_gdf = ox.graph_to_gdfs(G, edges=False)
-        logger.debug(f"Graph has {len(nodes_gdf)} nodes")
+        # Filter stations to only include removed ones
+        removed_stations = stations_gdf[stations_gdf.index.isin(removed_indices)].copy()
 
-        # Get convex hull of nodes (this should already be in EPSG:4326)
-        area_polygon = nodes_gdf.unary_union.convex_hull
-        logger.debug("Computed convex hull of graph nodes")
+        if removed_stations.empty:
+            logger.warning("No removed stations found to save")
+            return
 
-        # Query gas stations within the polygon
-        tags = {"amenity": "fuel"}
-        logger.info("Downloading gas stations from OpenStreetMap...")
+        # Add metadata about removal
+        removed_stations["removal_type"] = removal_type
+        removed_stations["removal_order"] = range(1, len(removed_stations) + 1)
+        removed_stations["station_index"] = removed_stations.index
 
-        gas_stations = ox.features_from_polygon(area_polygon, tags=tags)
-        logger.info(f"Downloaded {len(gas_stations)} gas station features")
-
-        # Filter to only include valid geometries and convert to points
-        logger.debug("Processing gas station geometries...")
-        gas_points = []
-
-        for idx, station in gas_stations.iterrows():
-            geom = station.geometry
-            if geom is not None and not geom.is_empty:
-                if geom.geom_type == "Point":
-                    gas_points.append(station)
-                elif hasattr(geom, "centroid"):
-                    # Convert polygons/multipolygons to centroids
-                    station_copy = station.copy()
-                    station_copy.geometry = geom.centroid
-                    gas_points.append(station_copy)
-
-        if gas_points:
-            gas_stations_gdf = gpd.GeoDataFrame(gas_points, crs="EPSG:4326")
-            gas_stations_gdf = gas_stations_gdf.reset_index(drop=True)
-            logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations")
+        # Add k-NN distance data if provided
+        if knn_dist is not None:
+            removed_stations["knn_dist_m"] = removed_stations.index.map(knn_dist)
+            logger.debug(
+                f"Added k-NN distance data for {len([idx for idx in removed_indices if idx in knn_dist])} stations"
+            )
         else:
-            # Create empty GeoDataFrame with expected structure
-            gas_stations_gdf = gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:4326")
-            logger.warning("No valid gas stations found")
+            removed_stations["knn_dist_m"] = None
+            logger.debug("No k-NN distance data provided")
 
-        return gas_stations_gdf
+        # Reset index for cleaner output
+        removed_stations = removed_stations.reset_index(drop=True)
+
+        logger.info(
+            f"Writing {len(removed_stations)} removed stations to {output_path}..."
+        )
+        removed_stations.to_file(output_path, layer="removed_stations", driver="GPKG")
+
+        logger.info(f"Successfully saved removed stations to {output_path}")
+        logger.debug(f"  Removal type: {removal_type}")
+        logger.debug(f"  Number of stations: {len(removed_stations)}")
+        logger.debug(f"  k-NN data included: {'Yes' if knn_dist is not None else 'No'}")
 
     except Exception as e:
-        logger.error(f"Failed to extract gas stations: {e}")
+        logger.error(f"Failed to save removed stations to {output_path}: {e}")
         raise
 
 
-def create_base_convex_hull(stations):
+def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg", suffix=None):
     """
-    Create a convex hull from station coordinates for consistent geometric analysis.
+    Save all gas stations to GeoPackage.
 
     Args:
-        stations: GeoDataFrame with fuel station data
-
-    Returns:
-        Polygon representing the convex hull of all stations
+        stations_gdf: GeoDataFrame with gas station data
+        out_file: Output filename for the GeoPackage
     """
+    logger.info(f"Saving {len(stations_gdf)} gas stations to GeoPackage: {out_file}")
+
+    # Ensure output directory exists
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        logger.info(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir)
+
+    # Define output path
+    output_path = f"{output_dir}/{out_file}"
+
+    if suffix:
+        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
+
     try:
-        from shapely.geometry import MultiPoint
+        # Create a copy to avoid modifying original data
+        stations_to_save = stations_gdf.copy()
 
-        # Extract coordinates from stations
-        coords = [
-            (station.geometry.x, station.geometry.y)
-            for _, station in stations.iterrows()
-        ]
+        # Add metadata
+        stations_to_save["station_index"] = stations_to_save.index
+        stations_to_save["extraction_source"] = "OpenStreetMap"
 
-        if len(coords) < 3:
-            logger.warning("Not enough stations to create convex hull")
-            return None
+        # Ensure geometry is valid
+        stations_to_save = stations_to_save[~stations_to_save.geometry.is_empty]
 
-        # Create MultiPoint and get convex hull
-        points = MultiPoint(coords)
-        convex_hull = points.convex_hull
+        # Reset index for cleaner output
+        stations_to_save = stations_to_save.reset_index(drop=True)
 
-        logger.info(f"✓ Created convex hull from {len(coords)} station coordinates")
-        return convex_hull
+        logger.info(f"Writing {len(stations_to_save)} gas stations to {output_path}...")
+        stations_to_save.to_file(output_path, layer="gas_stations", driver="GPKG")
+
+        logger.info(f"Successfully saved gas stations to {output_path}")
+        logger.debug(f"  Number of stations: {len(stations_to_save)}")
+        logger.debug(f"  CRS: {stations_to_save.crs}")
 
     except Exception as e:
-        logger.error(f"Error creating convex hull: {e}")
-        return None
+        logger.error(f"Failed to save gas stations to {output_path}: {e}")
+        raise
 
 
 # Configure logging with more detailed format
@@ -985,75 +1054,6 @@ def process_fuel_stations(stations, max_stations=None):
         )
 
     return stations
-
-
-def save_removed_stations_to_geopackage(
-    stations_gdf,
-    removed_indices,
-    out_file="removed_stations.gpkg",
-    removal_type="unknown",
-    knn_dist=None,
-    suffix=None,
-):
-    """
-    Save removed stations to GeoPackage.
-
-    Args:
-        stations_gdf: Original GeoDataFrame with all stations
-        removed_indices: List of station indices that were removed
-        out_file: Output filename for the GeoPackage
-        removal_type: Type of removal (e.g., "smart", "random")
-        knn_dist: Dictionary mapping station indices to k-NN distances (optional)
-    """
-    logger.info(
-        f"Saving {len(removed_indices)} removed stations ({removal_type}) to GeoPackage: {out_file}"
-    )
-
-    # Ensure output directory exists
-    output_dir = "output"
-    if not os.path.exists(output_dir):
-        logger.info(f"Creating output directory: {output_dir}")
-        os.makedirs(output_dir)
-
-    # Define output path
-    output_path = f"{output_dir}/{out_file}"
-
-    if suffix:
-        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
-
-    try:
-        # Filter stations to only include removed ones
-        removed_stations = stations_gdf[stations_gdf.index.isin(removed_indices)].copy()
-
-        if removed_stations.empty:
-            logger.warning("No removed stations found to save")
-            return
-
-        # Add metadata about removal
-        removed_stations["removal_type"] = removal_type
-        removed_stations["removal_order"] = range(1, len(removed_stations) + 1)
-        removed_stations["station_index"] = removed_stations.index
-
-        # Add k-NN distance data if provided
-        if knn_dist is not None:
-            removed_stations["knn_dist_m"] = removed_stations.index.map(knn_dist)
-            logger.debug(
-                f"Added k-NN distance data for {len([idx for idx in removed_indices if idx in knn_dist])} stations"
-            )
-        else:
-            removed_stations["knn_dist_m"] = None
-            logger.debug("No k-NN distance data provided")
-
-        # Reset index for cleaner output
-        removed_stations = removed_stations.reset_index(drop=True)
-
-        logger.info(
-            f"Writing {len(removed_stations)} removed stations to {output_path}..."
-        )
-        removed_stations.to_file(output_path, layer="removed_stations", driver="GPKG")
-
-        logger.info(f"Successfully saved removed stations to {output_path}")
-        logger.debug(f"  Removal type: {removal_type}")
         logger.debug(f"  Number of stations: {len(removed_stations)}")
         logger.debug(f"  k-NN data included: {'Yes' if knn_dist is not None else 'No'}")
 
