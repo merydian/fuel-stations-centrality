@@ -13,7 +13,7 @@ import igraph as ig
 logger = logging.getLogger(__name__)
 
 
-def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpkg"):
+def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpkg", suffix=None):
     logger.info(f"Saving graph to GeoPackage: {out_file}")
 
     # Ensure output directory exists
@@ -366,7 +366,7 @@ def remove_random_stations(G, num_remove, seed=None):
     return G
 
 
-def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
+def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
     """
     Save Voronoi diagram from graph to GeoPackage.
 
@@ -388,6 +388,9 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg"):
 
     # Define output path
     output_path = f"{output_dir}/{out_file}"
+
+    if suffix:
+        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
 
     try:
         # Create GeoDataFrame for Voronoi polygons
@@ -990,6 +993,7 @@ def save_removed_stations_to_geopackage(
     out_file="removed_stations.gpkg",
     removal_type="unknown",
     knn_dist=None,
+    suffix=None,
 ):
     """
     Save removed stations to GeoPackage.
@@ -1013,6 +1017,9 @@ def save_removed_stations_to_geopackage(
 
     # Define output path
     output_path = f"{output_dir}/{out_file}"
+
+    if suffix:
+        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
 
     try:
         # Filter stations to only include removed ones
@@ -1055,7 +1062,7 @@ def save_removed_stations_to_geopackage(
         raise
 
 
-def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg"):
+def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg", suffix=None):
     """
     Save all gas stations to GeoPackage.
 
@@ -1073,6 +1080,9 @@ def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg"):
 
     # Define output path
     output_path = f"{output_dir}/{out_file}"
+
+    if suffix:
+        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
 
     try:
         # Create a copy to avoid modifying original data
