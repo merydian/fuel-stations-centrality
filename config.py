@@ -11,10 +11,14 @@ class Config:
 
     # Analysis parameters
     PLACE = "Hamburg, Germany"
-    MAX_DISTANCE = 1500  # meters
-    N_REMOVE = 25
-    K_NN = 5
+    MAX_DISTANCE = 250000  # meters
+    N_REMOVE = 50
+    K_NN = 8
     REMOVAL_KIND = "knn_dist"
+
+
+    USE_LOCAL_PBF = True
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "hamburg-latest.osm"
 
     # Distance calculation method
     USE_ORS_FOR_STATIONS = (
@@ -35,6 +39,7 @@ class Config:
 
     # File names
     LOG_FILE = "fuel_stations.log"
+    STATS_FILE = OUTPUT_DIR / "stats.json"  # Path to save all stats
 
     # API configuration
     ORS_API_KEY = os.getenv("ORS_API_KEY")

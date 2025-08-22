@@ -1,5 +1,6 @@
 import osmnx as ox
 import logging
+import geopandas as gpd
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -65,6 +66,10 @@ def download_or_load_road_network(place: str):
 
     road_filename = Config.get_road_filename(place)
     road_filepath = Config.DATA_DIR / road_filename
+
+    if Config.USE_LOCAL_PBF:
+            logger.info(f"Using local PBF file: {Config.LOCAL_PBF_PATH}")
+            G_road = ox.graph_from_xml(Config.LOCAL_PBF_PATH, simplify=True)
 
     if road_filepath.exists():
         logger.info(f"Loading cached road network from {road_filepath}")
