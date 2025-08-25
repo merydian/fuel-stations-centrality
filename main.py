@@ -63,11 +63,11 @@ def main():
         step_start = log_step_start(
             "0", "Downloading/Loading road network from OpenStreetMap"
         )
-        road_filename = Config.get_road_filename(Config.PLACE)
-        road_filepath = Config.DATA_DIR / road_filename
 
-        logger.info(f"Loading cached road network from {road_filepath}")
+        road_filepath = Config.get_road_filepath(Config.PLACE)
+        logger.info(f"Loading road network from {road_filepath}")
         G_road = ox.load_graphml(road_filepath)
+
         logger.info(
             f"✓ Cached road network loaded: {len(G_road.nodes):,} nodes, {len(G_road.edges):,} edges"
         )

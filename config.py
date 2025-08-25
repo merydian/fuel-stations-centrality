@@ -16,7 +16,7 @@ class Config:
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "hamburg-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Distance calculation method
@@ -54,9 +54,9 @@ class Config:
         cls.CACHE_DIR.mkdir(exist_ok=True)
 
     @classmethod
-    def get_road_filename(cls, place: str) -> str:
+    def get_road_filename(cls) -> str:
         """Generate standardized road network filename."""
-        safe_name = place.lower().replace(", ", "_").replace(" ", "_")
+        safe_name = cls.PLACE.lower().replace(", ", "_").replace(" ", "_")
         return f"{safe_name}_road.graphml"
 
     @classmethod
@@ -77,3 +77,9 @@ class Config:
             raise ValueError("MAX_DISTANCE must be positive")
         if cls.MAX_DISTANCE <= 0:
             raise ValueError("MAX_DISTANCE must be positive")
+
+    @classmethod
+    def get_road_filepath(cls) -> Path:
+        """Get the file path for the road network."""
+        road_filename = cls.get_road_filename(cls.PLACE)
+        return cls.DATA_DIR / road_filename
