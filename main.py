@@ -82,7 +82,9 @@ def main():
 
         # Step 1.5: Save all gas stations to GeoPackage
         step_start = log_step_start("1.5", "Saving all gas stations to GeoPackage")
-        save_stations_to_geopackage(stations, out_file=f"all_gas_stations_{Config.get_road_filename()}.gpkg")
+        save_stations_to_geopackage(
+            stations, out_file=f"all_gas_stations_{Config.get_road_filename()}.gpkg"
+        )
         logger.info(
             f"✓ All {len(stations)} gas stations saved to all_gas_stations_{Config.get_road_filename()}.gpkg"
         )
@@ -154,8 +156,11 @@ def main():
 
         # Step 7: Save baseline road network
         step_start = log_step_start("7", "Saving baseline road network data")
-        save_graph_to_geopackage(G_road_ig, out_file=f"road_network_baseline_{Config.get_road_filename().stem}.gpkg")
-        logger.info(f"✓ Baseline road network saved to GeoPackage")
+        save_graph_to_geopackage(
+            G_road_ig,
+            out_file=f"road_network_baseline_{Config.get_road_filename().stem}.gpkg",
+        )
+        logger.info("✓ Baseline road network saved to GeoPackage")
         log_step_end(step_start, "7", "Baseline save")
 
         # Step 8: Identify stations for removal based on k-NN analysis
@@ -261,9 +266,13 @@ def main():
 
         # Step 12: Save filtered road networks
         step_start = log_step_start("12", "Saving filtered road networks")
-        save_graph_to_geopackage(G_road_ig, out_file=f"road_network_smart_filtered_{Config.get_road_filename().stem}.gpkg")
         save_graph_to_geopackage(
-            G_road_ig, out_file=f"road_network_random_filtered_{Config.get_road_filename().stem}.gpkg"
+            G_road_ig,
+            out_file=f"road_network_smart_filtered_{Config.get_road_filename().stem}.gpkg",
+        )
+        save_graph_to_geopackage(
+            G_road_ig,
+            out_file=f"road_network_random_filtered_{Config.get_road_filename().stem}.gpkg",
         )
         logger.info("✓ Filtered road networks saved")
         log_step_end(step_start, "12", "Filtered network save")

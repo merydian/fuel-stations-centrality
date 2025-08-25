@@ -14,7 +14,9 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
-def save_graph_to_geopackage(G, farness=None, knn_dist=None, out_file="graph.gpkg", suffix=None):
+def save_graph_to_geopackage(
+    G, farness=None, knn_dist=None, out_file="graph.gpkg", suffix=None
+):
     logger.info(f"Saving graph to GeoPackage: {out_file}")
 
     # Ensure output directory exists
@@ -309,12 +311,16 @@ def get_gas_stations_from_graph(G, area_polygon=None):
                     gas_points.append(station_copy)
 
         if gas_points:
-            gas_stations_gdf = gpd.GeoDataFrame(gas_points, crs=f"EPSG:{Config.EPSG_CODE}")
+            gas_stations_gdf = gpd.GeoDataFrame(
+                gas_points, crs=f"EPSG:{Config.EPSG_CODE}"
+            )
             gas_stations_gdf = gas_stations_gdf.reset_index(drop=True)
             logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations")
         else:
             # Create empty GeoDataFrame with expected structure
-            gas_stations_gdf = gpd.GeoDataFrame(columns=["geometry"], crs=f"EPSG:{Config.EPSG_CODE}")
+            gas_stations_gdf = gpd.GeoDataFrame(
+                columns=["geometry"], crs=f"EPSG:{Config.EPSG_CODE}"
+            )
             logger.warning("No valid gas stations found")
 
         return gas_stations_gdf
@@ -663,7 +669,9 @@ def save_removed_stations_to_geopackage(
         raise
 
 
-def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg", suffix=None):
+def save_stations_to_geopackage(
+    stations_gdf, out_file="all_gas_stations.gpkg", suffix=None
+):
     """
     Save all gas stations to GeoPackage.
 
@@ -747,16 +755,6 @@ def log_step_end(start_time, step_num, description):
     duration = time.time() - start_time
     logger.info(f"STEP {step_num} COMPLETED: {description} (Duration: {duration:.2f}s)")
     logger.info("-" * 60)
-
-
-def log_step_start(step_num, description):
-    """Log the start of a processing step and return timestamp."""
-    timestamp = time.time()
-    logger.info("=" * 60)
-    logger.info(f"STEP {step_num}: {description.upper()}")
-    logger.info("=" * 60)
-    return timestamp
-
 
 def find_stations_in_road_network(G_road, stations):
     """
@@ -894,143 +892,6 @@ def convert_networkx_to_igraph(G_nx):
         logger.error(f"Error converting NetworkX to igraph: {e}")
         return None
 
-
-def find_stations_in_road_network(G_road, stations_gdf):
-    """
-    Find fuel stations in the road network and return mapping information.
-
-    Args:
-        G_road: NetworkX road network graph
-        stations_gdf: GeoDataFrame of fuel stations
-
-    Returns:
-        dict: Mapping from station index to road network node
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Mapping fuel stations to road network nodes...")
-
-    # Get road network nodes as GeoDataFrame
-    road_nodes_gdf = ox.graph_to_gdfs(G_road, edges=False)
-
-    # Auto-detect appropriate projected CRS based on the centroid
-    try:
-        # Get the centroid of the road network to determine appropriate UTM zone
-        bounds = road_nodes_gdf.total_bounds
-        center_lon = (bounds[0] + bounds[2]) / 2
-        center_lat = (bounds[1] + bounds[3]) / 2
-
-        # Calculate UTM zone
-        utm_zone = int((center_lon + 180) / 6) + 1
-        hemisphere = "N" if center_lat >= 0 else "S"
-        epsg_code = 32600 + utm_zone if hemisphere == "N" else 32700 + utm_zone
-        projected_crs = f"EPSG:{epsg_code}"
-
-        logger.info(
-            f"Using projected CRS: {projected_crs} for accurate distance calculations"
-        )
-
-        # Project both geometries to the same projected CRS
-        road_nodes_projected = road_nodes_gdf.to_crs(projected_crs)
-        stations_projected = stations_gdf.to_crs(projected_crs)
-
-        station_to_node_mapping = {}
-
-        for idx, station in stations_projected.iterrows():
-            # Find nearest road network node to each station
-            station_point = station.geometry
-
-            # Calculate distances to all road nodes (now in meters)
-            distances = road_nodes_projected.geometry.distance(station_point)
-            nearest_node_idx = distances.idxmin()
-
-            station_to_node_mapping[idx] = nearest_node_idx
-
-        logger.info(
-            f"✓ Mapped {len(station_to_node_mapping)} stations to road network nodes using {projected_crs}"
-        )
-
-    except Exception as e:
-        logger.warning(
-            f"CRS projection failed, falling back to geographic distances: {e}"
-        )
-        # Fallback to original method if projection fails
-        station_to_node_mapping = {}
-
-        for idx, station in stations_gdf.iterrows():
-            # Find nearest road network node to each station
-            station_point = station.geometry
-
-            # Calculate distances to all road nodes
-            distances = road_nodes_gdf.geometry.distance(station_point)
-            nearest_node_idx = distances.idxmin()
-
-            station_to_node_mapping[idx] = nearest_node_idx
-
-        logger.info(
-            f"✓ Mapped {len(station_to_node_mapping)} stations to road network nodes (using geographic CRS)"
-        )
-
-    return station_to_node_mapping
-
-
-def remove_stations_from_road_network(
-    G_road, station_to_node_mapping, stations_to_remove
-):
-    """
-    Remove station-related nodes from the road network.
-
-    Args:
-        G_road: NetworkX road network graph
-        station_to_node_mapping: Mapping from station index to road node
-        stations_to_remove: List of station indices to remove
-
-    Returns:
-        NetworkX graph with stations removed
-    """
-    logger = logging.getLogger(__name__)
-
-    # Get road nodes to remove
-    nodes_to_remove = [
-        station_to_node_mapping[station_idx]
-        for station_idx in stations_to_remove
-        if station_idx in station_to_node_mapping
-    ]
-
-    logger.info(
-        f"Removing {len(nodes_to_remove)} nodes from road network (corresponding to {len(stations_to_remove)} stations)"
-    )
-
-    # Create copy and remove nodes
-    G_modified = G_road.copy()
-    G_modified.remove_nodes_from(nodes_to_remove)
-
-    logger.info(
-        f"✓ Road network modified: {G_road.number_of_nodes()} → {G_modified.number_of_nodes()} nodes"
-    )
-
-    return G_modified
-
-
-def convert_networkx_to_igraph(G_nx):
-    """
-    Convert NetworkX graph to igraph with proper attributes.
-
-    Args:
-        G_nx: NetworkX graph
-
-    Returns:
-        igraph Graph
-    """
-    logger = logging.getLogger(__name__)
-    logger.info("Converting NetworkX graph to igraph...")
-
-    # Convert to igraph
-    G_ig = ig.Graph.from_networkx(G_nx)
-
-    logger.info(f"✓ Converted to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges")
-
-    return G_ig
-
 def make_graph_from_stations(
     stations: gpd.GeoDataFrame,
     api_key: str = None,
@@ -1062,20 +923,15 @@ def make_graph_from_stations(
     ig.Graph
         igraph Graph with stations connected by calculated distances
     """
-    if use_ors:
-        if not api_key:
-            raise ValueError("API key is required when use_ors=True")
-        logger.info("Using OpenRouteService for station distance calculation")
-        return make_graph_from_stations_ors(stations, api_key, profile)
-    else:
-        if G_road is None or station_to_node_mapping is None:
-            raise ValueError(
-                "G_road and station_to_node_mapping are required when use_ors=False"
-            )
-        logger.info("Using road network for station distance calculation")
-        return make_graph_from_stations_via_road_network(
-            stations, G_road, station_to_node_mapping
+    if G_road is None or station_to_node_mapping is None:
+        raise ValueError(
+            "G_road and station_to_node_mapping are required when use_ors=False"
         )
+    logger.info("Using road network for station distance calculation")
+    return make_graph_from_stations_via_road_network(
+        stations, G_road, station_to_node_mapping
+    )
+
 
 def make_graph_from_stations_via_road_network(
     stations: gpd.GeoDataFrame,
@@ -1212,6 +1068,7 @@ def make_graph_from_stations_via_road_network(
 
     return G
 
+
 def process_fuel_stations(stations, max_stations=None):
     """Process and validate fuel stations data."""
     logger = logging.getLogger(__name__)
@@ -1235,52 +1092,3 @@ def process_fuel_stations(stations, max_stations=None):
         )
 
     return stations
-
-
-
-def save_stations_to_geopackage(stations_gdf, out_file="all_gas_stations.gpkg", suffix=None):
-    """
-    Save all gas stations to GeoPackage.
-
-    Args:
-        stations_gdf: GeoDataFrame with gas station data
-        out_file: Output filename for the GeoPackage
-    """
-    logger.info(f"Saving {len(stations_gdf)} gas stations to GeoPackage: {out_file}")
-
-    # Ensure output directory exists
-    output_dir = "output"
-    if not os.path.exists(output_dir):
-        logger.info(f"Creating output directory: {output_dir}")
-        os.makedirs(output_dir)
-
-    # Define output path
-    output_path = f"{output_dir}/{out_file}"
-
-    if suffix:
-        output_path = output_path.replace(".gpkg", f"_{suffix}.gpkg")
-
-    try:
-        # Create a copy to avoid modifying original data
-        stations_to_save = stations_gdf.copy()
-
-        # Add metadata
-        stations_to_save["station_index"] = stations_to_save.index
-        stations_to_save["extraction_source"] = "OpenStreetMap"
-
-        # Ensure geometry is valid
-        stations_to_save = stations_to_save[~stations_to_save.geometry.is_empty]
-
-        # Reset index for cleaner output
-        stations_to_save = stations_to_save.reset_index(drop=True)
-
-        logger.info(f"Writing {len(stations_to_save)} gas stations to {output_path}...")
-        stations_to_save.to_file(output_path, layer="gas_stations", driver="GPKG")
-
-        logger.info(f"Successfully saved gas stations to {output_path}")
-        logger.debug(f"  Number of stations: {len(stations_to_save)}")
-        logger.debug(f"  CRS: {stations_to_save.crs}")
-
-    except Exception as e:
-        logger.error(f"Failed to save gas stations to {output_path}: {e}")
-        raise
