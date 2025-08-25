@@ -294,8 +294,8 @@ def get_gas_stations_from_graph(G, area_polygon=None):
 
         # Query gas stations within the polygon
         tags = {"amenity": "fuel"}
-        logger.info("Downloading gas stations from OpenStreetMap...")
-        gas_stations = ox.features_from_polygon(area_polygon, tags=tags)
+        logger.info("Gettimg gas stations from OpenStreetMap...")
+        gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, polygon=area_polygon, tags=tags)
         logger.info(f"Downloaded {len(gas_stations)} gas station features")
 
         # Filter to only include valid geometries and convert to points
