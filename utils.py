@@ -287,15 +287,10 @@ def get_gas_stations_from_graph(G, area_polygon=None):
         nodes_gdf.fillna(0, inplace=True)
         logger.debug(f"Graph has {len(nodes_gdf)} nodes")
 
-        # Compute area polygon if not provided
-        if area_polygon is None:
-            area_polygon = union_all(nodes_gdf.geometry).convex_hull
-            logger.debug("Computed convex hull of graph nodes")
-
         # Query gas stations within the polygon
         tags = {"amenity": "fuel"}
         logger.info("Getting gas stations from OpenStreetMap...")
-        gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, polygon=area_polygon, tags=tags)
+        gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, tags=tags)
         logger.info(f"Downloaded {len(gas_stations)} gas station features")
 
         # Filter to only include valid geometries and convert to points
