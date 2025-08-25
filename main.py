@@ -52,10 +52,6 @@ def main():
     logger.info(f"  • Stations to remove: {Config.N_REMOVE}")
     logger.info(f"  • k-NN parameter: {Config.K_NN}")
     logger.info(f"  • Removal criteria: {Config.REMOVAL_KIND}")
-    logger.info(
-        f"  • Distance method: {'OpenRouteService API' if Config.USE_ORS_FOR_STATIONS else 'Road Network'}"
-    )
-    logger.info(f"  • ORS API Key: {'✓ SET' if Config.ORS_API_KEY else '✗ NOT SET'}")
     logger.info("")
 
     try:
