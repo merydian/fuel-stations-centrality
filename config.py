@@ -11,12 +11,12 @@ class Config:
 
     # Analysis parameters
     PLACE = "Afghanistan"
-    MAX_DISTANCE = 250000  # meters
+    MAX_DISTANCE = 50000  # meters
     N_REMOVE = 50
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "hamburg-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Distance calculation method
