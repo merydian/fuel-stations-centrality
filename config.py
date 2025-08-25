@@ -25,7 +25,6 @@ class Config:
     )
 
     # Data limits
-    MAX_STATIONS_FOR_ANALYSIS = 100
     MIN_STATIONS_REQUIRED = 10
 
     # Random seed for reproducibility
