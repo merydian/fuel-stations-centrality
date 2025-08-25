@@ -10,13 +10,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Saarland"
-    MAX_DISTANCE = 50000  # meters
-    N_REMOVE = 50
+    PLACE = "Afghanistan"
+    MAX_DISTANCE = 100_000  # meters
+    N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "saarland-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Distance calculation method
@@ -39,8 +39,47 @@ class Config:
     LOG_FILE = "fuel_stations.log"
     STATS_FILE = OUTPUT_DIR / "stats.json"  # Path to save all stats
 
-    # Coordinate Reference System (CRS)
-    EPSG_CODE = 32642  # Default: WGS84
+    # Coordinate Reference System (CRS) configuration
+    WGS84_EPSG = 4326  # Input CRS from OSM data
+    EPSG_CODE = 32642  # Target projected CRS for analysis (UTM Zone 32N for Germany)
+
+    @classmethod
+    def get_wgs84_crs(cls):
+        """Get WGS84 CRS string."""
+        return f"EPSG:{cls.WGS84_EPSG}"
+
+    @classmethod
+    def get_target_crs(cls):
+        """Get target projected CRS string."""
+        return f"EPSG:{cls.EPSG_CODE}"
+
+    @classmethod
+    def ensure_target_crs(cls, gdf, name="data"):
+        """
+        Ensure GeoDataFrame is in target projected CRS.
+
+        Args:
+            gdf: GeoDataFrame to check/transform
+            name: Name for logging purposes
+
+        Returns:
+            GeoDataFrame in target CRS
+        """
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if gdf.crs is None:
+            logger.info(f"Setting {name} CRS to WGS84 (assumed)")
+            gdf.crs = cls.get_wgs84_crs()
+
+        if str(gdf.crs) != cls.get_target_crs():
+            logger.info(f"Projecting {name} from {gdf.crs} to {cls.get_target_crs()}")
+            gdf = gdf.to_crs(cls.get_target_crs())
+        else:
+            logger.debug(f"{name} already in target CRS {cls.get_target_crs()}")
+
+        return gdf
 
     @classmethod
     def ensure_directories(cls):

@@ -37,7 +37,7 @@ def save_graph_to_geopackage(
         node_geoms.append(Point(lon, lat))
         node_ids.append(i)
     gdf_nodes = gpd.GeoDataFrame(
-        {"node_id": node_ids}, geometry=node_geoms, crs=f"EPSG:{Config.EPSG_CODE}"
+        {"node_id": node_ids}, geometry=node_geoms, crs=Config.get_target_crs()
     )
     logger.debug(f"Created nodes GeoDataFrame with {len(gdf_nodes)} features")
 
@@ -66,7 +66,7 @@ def save_graph_to_geopackage(
     gdf_edges = gpd.GeoDataFrame(
         {"source": src_ids, "target": dst_ids, "distance_m": weights},
         geometry=edge_geoms,
-        crs=f"EPSG:{Config.EPSG_CODE}",
+        crs=Config.get_target_crs(),
     )
     logger.debug(
         f"Created edges GeoDataFrame with {len(gdf_edges)} features "
@@ -115,7 +115,7 @@ def graph_to_gdf(G):
             }
         )
 
-    gdf_nodes = gpd.GeoDataFrame(nodes, crs=f"EPSG:{Config.EPSG_CODE}")
+    gdf_nodes = gpd.GeoDataFrame(nodes, crs=Config.get_target_crs())
     logger.debug(
         f"Created GeoDataFrame with {len(gdf_nodes)} features, "
         f"farness data {'included' if farness_available else 'not available'}, "
@@ -192,7 +192,7 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
                 }
             )
 
-        gdf_voronoi = gpd.GeoDataFrame(voronoi_data, crs=f"EPSG:{Config.EPSG_CODE}")
+        gdf_voronoi = gpd.GeoDataFrame(voronoi_data, crs=Config.get_target_crs())
         logger.debug(f"Created Voronoi GeoDataFrame with {len(gdf_voronoi)} features")
 
         # Create GeoDataFrame for clipping convex hull (the one used for Voronoi clipping)
@@ -204,7 +204,7 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
                     "type": ["clipping_hull"],
                 },
                 geometry=[convex_hull],
-                crs=f"EPSG:{Config.EPSG_CODE}",
+                crs=Config.get_target_crs(),
             )
         else:
             logger.warning("No convex hull found in graph")
@@ -219,7 +219,7 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
                     "type": ["base_hull"],
                 },
                 geometry=[base_convex_hull],
-                crs=f"EPSG:{Config.EPSG_CODE}",
+                crs=Config.get_target_crs(),
             )
         else:
             gdf_base_hull = None
@@ -251,7 +251,7 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
                 }
             )
 
-        gdf_stations = gpd.GeoDataFrame(station_points, crs=f"EPSG:{Config.EPSG_CODE}")
+        gdf_stations = gpd.GeoDataFrame(station_points, crs=Config.get_target_crs())
         gdf_stations.to_file(output_path, layer="stations", driver="GPKG")
 
         layers_saved = ["voronoi_polygons", "stations"]
@@ -271,27 +271,26 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
 def get_gas_stations_from_graph(G, area_polygon=None):
     """
     Get gas stations within the area of a NetworkX graph from OSMnx.
+    Uses unified projection logic from Config.
 
     Args:
-        G: NetworkX graph from osmnx
+        G: NetworkX graph from osmnx (should be in projected CRS)
         area_polygon: optional Shapely polygon to restrict the search
 
     Returns:
-        GeoDataFrame of gas stations with Point geometries
+        GeoDataFrame of gas stations with Point geometries in target CRS
     """
-    logger.info("Extracting gas stations from OSM using graph boundaries")
+    logger.info("Extracting gas stations from OSM using unified projection logic")
 
     try:
-        # Convert graph nodes to GeoDataFrame
-        nodes_gdf = ox.graph_to_gdfs(G, edges=False)
-        nodes_gdf.fillna(0, inplace=True)
-        logger.debug(f"Graph has {len(nodes_gdf)} nodes")
-
-        # Query gas stations within the polygon
+        # Query gas stations from PBF file
         tags = {"amenity": "fuel"}
-        logger.info("Getting gas stations from OpenStreetMap...")
+        logger.info("Getting gas stations from OpenStreetMap PBF file...")
         gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, tags=tags)
         logger.info(f"Downloaded {len(gas_stations)} gas station features")
+
+        # Use Config's unified projection logic
+        gas_stations = Config.ensure_target_crs(gas_stations, "gas stations")
 
         # Filter to only include valid geometries and convert to points
         logger.debug("Processing gas station geometries...")
@@ -310,13 +309,13 @@ def get_gas_stations_from_graph(G, area_polygon=None):
 
         if gas_points:
             gas_stations_gdf = gpd.GeoDataFrame(
-                gas_points, crs=f"EPSG:{Config.EPSG_CODE}"
+                gas_points, crs=Config.get_target_crs()
             ).reset_index(drop=True)
-            logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations")
+            logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations in CRS {Config.get_target_crs()}")
         else:
             # Create empty GeoDataFrame with expected structure
             gas_stations_gdf = gpd.GeoDataFrame(
-                columns=["geometry"], crs=f"EPSG:{Config.EPSG_CODE}"
+                columns=["geometry"], crs=Config.get_target_crs()
             )
             logger.warning("No valid gas stations found")
 
@@ -332,11 +331,12 @@ def remove_edges_far_from_stations_graph(
 ):
     """
     Remove edges that are farther than max_distance (network distance) 
-    from any gas station, using a multi-source Dijkstra.
+    from any gas station, using igraph's built-in shortest path functions.
+    Uses unified projection logic from Config.
 
     Args:
-        G: igraph Graph object (road network, already projected, edges have "length" attr in meters)
-        stations_gdf: GeoDataFrame with gas station geometries (same CRS as graph)
+        G: igraph Graph object (road network, in target projected CRS)
+        stations_gdf: GeoDataFrame with gas station geometries  
         max_distance: Maximum distance in meters along the graph
         station_to_node_mapping: Optional mapping {station_idx -> graph_node_idx}
 
@@ -344,10 +344,9 @@ def remove_edges_far_from_stations_graph(
         Modified graph with distant edges removed
     """
     import numpy as np
-    import heapq
 
     logger.info(
-        f"Removing edges farther than {max_distance:,} meters (network distance) from any gas station"
+        f"Removing edges farther than {max_distance:,} meters (network distance) from any gas station using igraph"
     )
 
     if G.vcount() == 0:
@@ -358,10 +357,13 @@ def remove_edges_far_from_stations_graph(
         logger.warning("No stations provided - keeping all edges")
         return G
 
-    # --- Step 1: Determine station nodes ---
+    # --- Step 1: Ensure consistent CRS and determine station nodes ---
     if station_to_node_mapping is not None:
         station_nodes = list(station_to_node_mapping.values())
     else:
+        # Use Config's unified projection logic
+        stations_gdf = Config.ensure_target_crs(stations_gdf, "stations for edge removal")
+        
         station_nodes = []
         for _, station in stations_gdf.iterrows():
             sx, sy = station.geometry.x, station.geometry.y
@@ -379,39 +381,38 @@ def remove_edges_far_from_stations_graph(
 
     logger.info(f"Using {len(station_nodes)} stations mapped to graph nodes")
 
-    # --- Step 2: Multi-source Dijkstra ---
-    dist = np.full(G.vcount(), np.inf)
-    visited = np.zeros(G.vcount(), dtype=bool)
-    pq = []
+    # --- Step 2: Use igraph's shortest_paths to compute distances from all station nodes ---
+    logger.debug("Computing shortest paths from station nodes using igraph...")
+    
+    # Get shortest path distances from all station nodes to all other nodes
+    weight_attr = "length" if "length" in G.es.attributes() else None
+    try:
+        # Compute shortest paths from station nodes to all other nodes
+        distances_matrix = G.shortest_paths(
+            source=station_nodes, 
+            target=None, 
+            weights=weight_attr, 
+            mode="out"
+        )
+        
+        # For each node, find the minimum distance to any station
+        min_distances = np.full(G.vcount(), np.inf)
+        for i in range(len(station_nodes)):
+            for j in range(G.vcount()):
+                if distances_matrix[i][j] < min_distances[j]:
+                    min_distances[j] = distances_matrix[i][j]
+                    
+        logger.debug(f"Computed distances to {len([d for d in min_distances if d != np.inf])} reachable nodes")
+        
+    except Exception as e:
+        logger.error(f"Failed to compute shortest paths using igraph: {e}")
+        return G
 
-    for s in station_nodes:
-        if 0 <= s < G.vcount():
-            dist[s] = 0.0
-            heapq.heappush(pq, (0.0, s))
-        else:
-            logger.warning(f"Invalid station node ID: {s}")
-
-    while pq:
-        d, u = heapq.heappop(pq)
-        if visited[u]:
-            continue
-        visited[u] = True
-
-        if d > max_distance:
-            continue  # No need to propagate farther than max_distance
-
-        for e in G.vs[u].all_edges():
-            v = e.target if e.source == u else e.source
-            w = e["length"] if "length" in e.attributes() else 1.0
-            if dist[v] > d + w:
-                dist[v] = d + w
-                heapq.heappush(pq, (dist[v], v))
-
-    # --- Step 3: Remove edges with endpoints farther than max_distance ---
+    # --- Step 3: Remove edges with both endpoints farther than max_distance ---
     edges_to_remove = []
     for i, edge in enumerate(G.es):
         u, v = edge.source, edge.target
-        if dist[u] > max_distance and dist[v] > max_distance:
+        if min_distances[u] > max_distance and min_distances[v] > max_distance:
             edges_to_remove.append(i)
 
     logger.info(
@@ -727,9 +728,10 @@ def log_step_end(start_time, step_num, description):
 def find_stations_in_road_network(G_road, stations):
     """
     Find the road network nodes that correspond to fuel stations.
+    Uses unified projection logic from Config.
 
     Args:
-        G_road: NetworkX road network graph
+        G_road: NetworkX road network graph (in target projected CRS)
         stations: GeoDataFrame with fuel station data
 
     Returns:
@@ -739,7 +741,12 @@ def find_stations_in_road_network(G_road, stations):
         import numpy as np
         from scipy.spatial import cKDTree
 
-        # Get road network node coordinates
+        logger.info("Mapping fuel stations to road network nodes using unified projection...")
+        
+        # Use Config's unified projection logic
+        stations = Config.ensure_target_crs(stations, "stations for road network mapping")
+
+        # Get road network node coordinates (already in target projected CRS)
         road_nodes = []
         road_node_ids = []
         for node_id, data in G_road.nodes(data=True):
@@ -747,6 +754,7 @@ def find_stations_in_road_network(G_road, stations):
             road_node_ids.append(node_id)
 
         road_nodes = np.array(road_nodes)
+        logger.debug(f"Extracted {len(road_nodes)} road network nodes")
 
         # Build KDTree for efficient nearest neighbor search
         tree = cKDTree(road_nodes)
@@ -754,6 +762,7 @@ def find_stations_in_road_network(G_road, stations):
         # Find nearest road nodes for each station
         station_to_node = {}
         for idx, station in stations.iterrows():
+            # Extract coordinates (now guaranteed to be in target CRS)
             station_coords = np.array([station.geometry.x, station.geometry.y])
 
             # Find nearest road node
@@ -761,6 +770,9 @@ def find_stations_in_road_network(G_road, stations):
             nearest_node_id = road_node_ids[nearest_idx]
 
             station_to_node[idx] = nearest_node_id
+            
+            if distance > 1000:  # Log warning for stations > 1km from road
+                logger.warning(f"Station {idx} is {distance:.1f}m from nearest road node")
 
         logger.info(f"✓ Mapped {len(station_to_node)} stations to road network nodes")
         return station_to_node
@@ -768,7 +780,6 @@ def find_stations_in_road_network(G_road, stations):
     except Exception as e:
         logger.error(f"Error mapping stations to road network: {e}")
         return {}
-
 
 def remove_stations_from_road_network(
     G_road, station_to_node_mapping, stations_to_remove
@@ -816,15 +827,19 @@ def remove_stations_from_road_network(
 def convert_networkx_to_igraph(G_nx):
     """
     Convert NetworkX graph to igraph for centrality calculations.
+    Preserves coordinate attributes for projected CRS.
 
     Args:
-        G_nx: NetworkX graph
+        G_nx: NetworkX graph (should be in projected CRS)
 
     Returns:
-        igraph.Graph with equivalent structure
+        igraph.Graph with equivalent structure and preserved coordinates
     """
     try:
         import igraph as ig
+
+        logger.info("Converting NetworkX graph to igraph...")
+        logger.debug(f"Input graph CRS info: nodes have x,y coordinates in projected space")
 
         # Create node mapping
         node_list = list(G_nx.nodes())
@@ -833,27 +848,31 @@ def convert_networkx_to_igraph(G_nx):
         # Create edges for igraph
         edges = []
         edge_weights = []
+        edge_lengths = []
 
         for u, v, data in G_nx.edges(data=True):
             edges.append((node_to_idx[u], node_to_idx[v]))
-            # Use 'length' or 'weight' attribute, defaulting to 1.0
-            weight = data.get("length", data.get("weight", 1.0))
-            edge_weights.append(weight)
+            # Use 'length' attribute if available, fallback to 'weight', then 1.0
+            length = data.get("length", data.get("weight", 1.0))
+            edge_weights.append(length)
+            edge_lengths.append(length)
 
         # Create igraph
         G_ig = ig.Graph(n=len(node_list), edges=edges, directed=False)
         G_ig.es["weight"] = edge_weights
+        G_ig.es["length"] = edge_lengths
 
-        # Add node attributes
+        # Add node attributes - preserve projected coordinates
         for i, node in enumerate(node_list):
             node_data = G_nx.nodes[node]
             G_ig.vs[i]["name"] = str(node)
-            G_ig.vs[i]["x"] = node_data.get("x", 0.0)
-            G_ig.vs[i]["y"] = node_data.get("y", 0.0)
+            G_ig.vs[i]["x"] = float(node_data.get("x", 0.0))  # Projected x coordinate
+            G_ig.vs[i]["y"] = float(node_data.get("y", 0.0))  # Projected y coordinate
 
         logger.info(
             f"✓ Converted NetworkX to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges"
         )
+        logger.debug(f"Preserved projected coordinates in igraph node attributes")
         return G_ig
 
     except Exception as e:
@@ -908,13 +927,14 @@ def make_graph_from_stations_via_road_network(
 ) -> ig.Graph:
     """
     Create a graph from stations using distances calculated via the road network.
+    Uses unified projection logic from Config.
 
     Parameters
     ----------
     stations : gpd.GeoDataFrame
         GeoDataFrame containing fuel stations
     G_road : NetworkX Graph
-        Road network graph
+        Road network graph (in target projected CRS)
     station_to_node_mapping : dict
         Mapping from station indices to road network node IDs
 
@@ -924,7 +944,7 @@ def make_graph_from_stations_via_road_network(
         igraph Graph with stations connected by road network distances
     """
     logger.info(
-        f"Creating graph from {len(stations)} fuel stations using road network distances"
+        f"Creating graph from {len(stations)} fuel stations using road network distances and unified projection"
     )
 
     if stations.empty:
@@ -934,6 +954,9 @@ def make_graph_from_stations_via_road_network(
     if len(stations) < 2:
         logger.error(f"Insufficient stations: {len(stations)}")
         raise ValueError("At least 2 stations are required")
+
+    # Use Config's unified projection logic
+    stations = Config.ensure_target_crs(stations, "stations for graph creation")
 
     # Extract coordinates and valid station indices
     locations = []
@@ -950,7 +973,8 @@ def make_graph_from_stations_via_road_network(
                 else:
                     point = geom
 
-                locations.append((point.x, point.y))  # (longitude, latitude)
+                # Store projected coordinates (guaranteed to be in target CRS)
+                locations.append((point.x, point.y))
                 station_indices.append(idx)
                 road_nodes.append(station_to_node_mapping[idx])
 
@@ -1001,10 +1025,10 @@ def make_graph_from_stations_via_road_network(
     G.add_vertices(n)
     logger.debug(f"Added {n} vertices to graph")
 
-    # Set coordinates as vertex attributes
+    # Set coordinates as vertex attributes (projected coordinates)
     for idx, coord in enumerate(locations):
-        G.vs[idx]["x"] = coord[0]  # longitude
-        G.vs[idx]["y"] = coord[1]  # latitude
+        G.vs[idx]["x"] = coord[0]  # Projected x coordinate
+        G.vs[idx]["y"] = coord[1]  # Projected y coordinate
         G.vs[idx]["station_id"] = station_indices[idx]  # Original station index
         G.vs[idx]["road_node"] = road_nodes[idx]  # Corresponding road network node
 
@@ -1044,6 +1068,22 @@ def process_fuel_stations(stations, max_stations=None):
     len(stations)
 
     # Limit number of stations if needed
+    if max_stations and len(stations) > max_stations:
+        logger.warning(
+            f"Found {len(stations)} stations, limiting to {max_stations} for performance"
+        )
+        stations = stations.sample(
+            n=max_stations, random_state=Config.RANDOM_SEED
+        ).reset_index(drop=True)
+
+    logger.info(f"✓ Fuel stations processed: {len(stations)} stations")
+
+    if len(stations) < Config.MIN_STATIONS_REQUIRED:
+        raise ValueError(
+            f"Insufficient fuel stations: {len(stations)} < {Config.MIN_STATIONS_REQUIRED} minimum required"
+        )
+
+    return stations
     if max_stations and len(stations) > max_stations:
         logger.warning(
             f"Found {len(stations)} stations, limiting to {max_stations} for performance"

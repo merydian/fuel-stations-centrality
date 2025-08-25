@@ -39,6 +39,9 @@ def main():
     Config.ensure_directories()
     Config.validate_config()
 
+    # Get PBF file stem for output filenames
+    pbf_stem = Config.LOCAL_PBF_PATH.stem if hasattr(Config, "LOCAL_PBF_PATH") else "unknown"
+
     # Log analysis start
     time.time()
     logger.info("=" * 80)
@@ -136,12 +139,8 @@ def main():
             G_road_ig, stations, Config.MAX_DISTANCE, station_to_node_mapping
         )
 
-        # Create base convex hull from stations for consistent analysis
+        # No base convex hull needed
         base_convex_hull = None
-        if base_convex_hull:
-            logger.info("✓ Base convex hull computed for consistent analysis")
-        else:
-            logger.warning("⚠ Could not compute base convex hull")
         log_step_end(step_start, "5", "Road network conversion")
 
         # Step 6: Get baseline statistics on full road network
@@ -154,7 +153,7 @@ def main():
         step_start = log_step_start("7", "Saving baseline road network data")
         save_graph_to_geopackage(
             G_road_ig,
-            out_file=f"road_network_baseline_{Config.get_road_filename().stem}.gpkg",
+            out_file=f"road_network_baseline_{pbf_stem}.gpkg",
         )
         logger.info("✓ Baseline road network saved to GeoPackage")
         log_step_end(step_start, "7", "Baseline save")
@@ -181,7 +180,7 @@ def main():
         save_removed_stations_to_geopackage(
             stations,
             stations_to_remove,
-            out_file=f"removed_stations_smart_{Config.get_road_filename().stem}.gpkg",
+            out_file=f"removed_stations_smart_{pbf_stem}.gpkg",
             removal_type="smart_knn",
             knn_dist=knn_dist,
         )
@@ -224,7 +223,7 @@ def main():
         save_removed_stations_to_geopackage(
             stations,
             random_stations_to_remove,
-            out_file=f"removed_stations_random_{Config.get_road_filename().stem}.gpkg",
+            out_file=f"removed_stations_random_{pbf_stem}.gpkg",
             removal_type="random",
             knn_dist=knn_dist,
         )
@@ -264,11 +263,11 @@ def main():
         step_start = log_step_start("12", "Saving filtered road networks")
         save_graph_to_geopackage(
             G_road_ig,
-            out_file=f"road_network_smart_filtered_{Config.get_road_filename().stem}.gpkg",
+            out_file=f"road_network_smart_filtered_{pbf_stem}.gpkg",
         )
         save_graph_to_geopackage(
             G_road_ig,
-            out_file=f"road_network_random_filtered_{Config.get_road_filename().stem}.gpkg",
+            out_file=f"road_network_random_filtered_{pbf_stem}.gpkg",
         )
         logger.info("✓ Filtered road networks saved")
         log_step_end(step_start, "12", "Filtered network save")
@@ -478,22 +477,22 @@ def main():
         logger.info("")
         logger.info("📁 Output files saved:")
         logger.info(
-            f"   • all_gas_stations_{Config.get_road_filename().stem}.gpkg - All extracted gas stations from OpenStreetMap"
+            f"   • all_gas_stations_{pbf_stem}.gpkg - All extracted gas stations from OpenStreetMap"
         )
         logger.info(
-            f"   • road_network_baseline_{Config.get_road_filename().stem}.gpkg - Complete road network with centrality measures"
+            f"   • road_network_baseline_{pbf_stem}.gpkg - Complete road network with centrality measures"
         )
         logger.info(
-            f"   • road_network_smart_filtered_{Config.get_road_filename().stem}.gpkg - Road network after strategic station removal"
+            f"   • road_network_smart_filtered_{pbf_stem}.gpkg - Road network after strategic station removal"
         )
         logger.info(
-            f"   • road_network_random_filtered_{Config.get_road_filename().stem}.gpkg - Road network after random station removal"
+            f"   • road_network_random_filtered_{pbf_stem}.gpkg - Road network after random station removal"
         )
         logger.info(
-            f"   • removed_stations_smart_{Config.get_road_filename().stem}.gpkg - Stations removed by smart k-NN analysis"
+            f"   • removed_stations_smart_{pbf_stem}.gpkg - Stations removed by smart k-NN analysis"
         )
         logger.info(
-            f"   • removed_stations_random_{Config.get_road_filename().stem}.gpkg - Stations removed by random selection"
+            f"   • removed_stations_random_{pbf_stem}.gpkg - Stations removed by random selection"
         )
 
         log_step_end(step_start, "13", "Results comparison")
@@ -507,4 +506,5 @@ def main():
 
 
 if __name__ == "__main__":
+    main()
     main()
