@@ -9,6 +9,7 @@ import osmnx as ox
 from config import Config
 import time
 import igraph as ig
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -1030,6 +1031,186 @@ def convert_networkx_to_igraph(G_nx):
 
     return G_ig
 
+def make_graph_from_stations(
+    stations: gpd.GeoDataFrame,
+    api_key: str = None,
+    profile: str = "driving-car",
+    use_ors: bool = True,
+    G_road=None,
+    station_to_node_mapping: dict = None,
+) -> ig.Graph:
+    """
+    Create a graph from stations using either OpenRouteService or road network distances.
+
+    Parameters
+    ----------
+    stations : gpd.GeoDataFrame
+        GeoDataFrame containing fuel stations
+    api_key : str, optional
+        OpenRouteService API key (required if use_ors=True)
+    profile : str, optional
+        OpenRouteService routing profile (default: "driving-car")
+    use_ors : bool, optional
+        Whether to use OpenRouteService (True) or road network (False)
+    G_road : NetworkX Graph, optional
+        Road network graph (required if use_ors=False)
+    station_to_node_mapping : dict, optional
+        Mapping from station indices to road network nodes (required if use_ors=False)
+
+    Returns
+    -------
+    ig.Graph
+        igraph Graph with stations connected by calculated distances
+    """
+    if use_ors:
+        if not api_key:
+            raise ValueError("API key is required when use_ors=True")
+        logger.info("Using OpenRouteService for station distance calculation")
+        return make_graph_from_stations_ors(stations, api_key, profile)
+    else:
+        if G_road is None or station_to_node_mapping is None:
+            raise ValueError(
+                "G_road and station_to_node_mapping are required when use_ors=False"
+            )
+        logger.info("Using road network for station distance calculation")
+        return make_graph_from_stations_via_road_network(
+            stations, G_road, station_to_node_mapping
+        )
+
+def make_graph_from_stations_via_road_network(
+    stations: gpd.GeoDataFrame,
+    G_road,
+    station_to_node_mapping: dict,
+) -> ig.Graph:
+    """
+    Create a graph from stations using distances calculated via the road network.
+
+    Parameters
+    ----------
+    stations : gpd.GeoDataFrame
+        GeoDataFrame containing fuel stations
+    G_road : NetworkX Graph
+        Road network graph
+    station_to_node_mapping : dict
+        Mapping from station indices to road network node IDs
+
+    Returns
+    -------
+    ig.Graph
+        igraph Graph with stations connected by road network distances
+    """
+    logger.info(
+        f"Creating graph from {len(stations)} fuel stations using road network distances"
+    )
+
+    if stations.empty:
+        logger.error("Stations GeoDataFrame is empty")
+        raise ValueError("Stations GeoDataFrame cannot be empty")
+
+    if len(stations) < 2:
+        logger.error(f"Insufficient stations: {len(stations)}")
+        raise ValueError("At least 2 stations are required")
+
+    # Extract coordinates and valid station indices
+    locations = []
+    station_indices = []
+    road_nodes = []
+
+    for idx, station in stations.iterrows():
+        if idx in station_to_node_mapping:
+            geom = station.geometry
+            if geom is not None:
+                # Get centroid for non-point geometries
+                if hasattr(geom, "centroid"):
+                    point = geom.centroid
+                else:
+                    point = geom
+
+                locations.append((point.x, point.y))  # (longitude, latitude)
+                station_indices.append(idx)
+                road_nodes.append(station_to_node_mapping[idx])
+
+    n = len(locations)
+    logger.info(f"Found {n} stations with valid road network mappings")
+
+    if n < 2:
+        raise ValueError("At least 2 valid station mappings are required")
+
+    # Calculate shortest path distances between all station pairs using road network
+    logger.info("Computing shortest path distances via road network...")
+    distances = np.full((n, n), np.inf)
+
+    try:
+        import networkx as nx
+
+        # Compute all-pairs shortest paths for the station nodes
+        for i, source_node in enumerate(road_nodes):
+            if source_node in G_road:
+                # Compute shortest paths from this source to all other stations
+                try:
+                    path_lengths = nx.single_source_dijkstra_path_length(
+                        G_road, source_node, weight="length"
+                    )
+
+                    for j, target_node in enumerate(road_nodes):
+                        if target_node in path_lengths:
+                            distances[i, j] = path_lengths[target_node]
+
+                except nx.NetworkXNoPath:
+                    # Some nodes might not be reachable
+                    pass
+
+            if (i + 1) % max(1, n // 10) == 0:
+                logger.debug(f"Computed distances from {i + 1}/{n} stations")
+
+    except Exception as e:
+        logger.error(f"Failed to compute road network distances: {e}")
+        raise
+
+    logger.info("Road network distance calculation completed")
+
+    # Create igraph Graph
+    logger.info("Creating igraph directed graph...")
+    G = ig.Graph(directed=True)
+
+    # Add vertices
+    G.add_vertices(n)
+    logger.debug(f"Added {n} vertices to graph")
+
+    # Set coordinates as vertex attributes
+    for idx, coord in enumerate(locations):
+        G.vs[idx]["x"] = coord[0]  # longitude
+        G.vs[idx]["y"] = coord[1]  # latitude
+        G.vs[idx]["station_id"] = station_indices[idx]  # Original station index
+        G.vs[idx]["road_node"] = road_nodes[idx]  # Corresponding road network node
+
+    # Add edges with distances
+    logger.info("Adding edges with distance weights...")
+    edges = []
+    weights = []
+    lengths = []
+    finite_edges = 0
+
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                edges.append((i, j))
+                weight = distances[i, j]
+                weights.append(weight)
+                lengths.append(weight)
+                if weight != np.inf:
+                    finite_edges += 1
+
+    G.add_edges(edges)
+    G.es["weight"] = weights
+    G.es["length"] = lengths
+
+    logger.info(
+        f"Graph creation completed: {G.vcount()} vertices, {G.ecount()} edges "
+        f"({finite_edges} with finite weights, {G.ecount() - finite_edges} infinite)"
+    )
+
+    return G
 
 def process_fuel_stations(stations, max_stations=None):
     """Process and validate fuel stations data."""

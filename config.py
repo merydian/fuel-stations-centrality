@@ -56,7 +56,7 @@ class Config:
     def get_road_filename(cls) -> str:
         """Generate standardized road network filename."""
         safe_name = cls.PLACE.lower().replace(", ", "_").replace(" ", "_")
-        return f"{safe_name}_road.graphml"
+        return Path(f"{safe_name}_road.graphml")
 
     @classmethod
     def validate_config(cls):
@@ -80,5 +80,5 @@ class Config:
     @classmethod
     def get_road_filepath(cls) -> Path:
         """Get the file path for the road network."""
-        road_filename = cls.get_road_filename(cls.PLACE)
+        road_filename = cls.get_road_filename()
         return cls.DATA_DIR / road_filename
