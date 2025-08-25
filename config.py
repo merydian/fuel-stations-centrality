@@ -10,13 +10,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Afghanistan"
+    PLACE = "Saarland"
     MAX_DISTANCE = 50000  # meters
     N_REMOVE = 50
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "saarland-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Distance calculation method
@@ -39,9 +39,6 @@ class Config:
     LOG_FILE = "fuel_stations.log"
     STATS_FILE = OUTPUT_DIR / "stats.json"  # Path to save all stats
 
-    # API configuration
-    ORS_API_KEY = os.getenv("ORS_API_KEY")
-
     # Coordinate Reference System (CRS)
     EPSG_CODE = 32642  # Default: WGS84
 
@@ -61,10 +58,6 @@ class Config:
     @classmethod
     def validate_config(cls):
         """Validate configuration parameters."""
-        if cls.USE_ORS_FOR_STATIONS and not cls.ORS_API_KEY:
-            raise ValueError(
-                "ORS_API_KEY environment variable is required when USE_ORS_FOR_STATIONS is True"
-            )
 
         if cls.N_REMOVE <= 0:
             raise ValueError("N_REMOVE must be positive")

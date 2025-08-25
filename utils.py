@@ -359,33 +359,10 @@ def remove_edges_far_from_stations(
         logger.warning("No stations provided - keeping all edges")
         return G
 
-    # Determine appropriate UTM zone from the center of all coordinates
-    all_coords = []
-
-    # Add station coordinates
-    for _, station in stations_gdf.iterrows():
-        all_coords.append([station.geometry.x, station.geometry.y])
-
-    # Add graph node coordinates (sample)
-    sample_size = min(1000, G.vcount())  # Sample for efficiency
-    sample_indices = np.random.choice(G.vcount(), sample_size, replace=False)
-    for i in sample_indices:
-        all_coords.append([G.vs[i]["x"], G.vs[i]["y"]])
-
-    all_coords = np.array(all_coords)
-    center_lon = np.mean(all_coords[:, 0])
-    center_lat = np.mean(all_coords[:, 1])
-
-    # Calculate UTM zone
-    utm_zone = int((center_lon + 180) / 6) + 1
-    hemisphere = "N" if center_lat >= 0 else "S"
-    epsg_code = 32600 + utm_zone if hemisphere == "N" else 32700 + utm_zone
-    utm_crs = f"EPSG:{epsg_code}"
-
-    logger.info(f"Using UTM projection {utm_crs} for precise distance calculations")
+    logger.info(f"Using UTM projection {Config.EPSG_CODE} for precise distance calculations")
 
     # Create transformer for coordinate conversion
-    transformer = pyproj.Transformer.from_crs("EPSG:4326", utm_crs, always_xy=True)
+    transformer = pyproj.Transformer.from_crs("EPSG:4326", Config.EPSG_CODE, always_xy=True)
 
     # Transform station coordinates to UTM
     station_coords_utm = []
