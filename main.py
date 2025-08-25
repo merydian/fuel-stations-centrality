@@ -24,7 +24,6 @@ from utils import (
     save_removed_stations_to_geopackage,
     save_stations_to_geopackage,
 )
-from ors_router import make_graph_from_stations
 import osmnx as ox
 
 logger = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ def main():
             "0", "Downloading/Loading road network from OpenStreetMap"
         )
 
-        road_filepath = Config.get_road_filepath(Config.PLACE)
+        road_filepath = Config.get_road_filepath()
         logger.info(f"Loading road network from {road_filepath}")
         G_road = ox.load_graphml(road_filepath)
 
@@ -98,19 +97,13 @@ def main():
             "3", "Building station connectivity graph for k-NN analysis"
         )
 
-        if Config.USE_ORS_FOR_STATIONS:
-            logger.info("  Using OpenRouteService API for precise driving distances...")
-            G_stations = make_graph_from_stations(
-                stations, api_key=Config.ORS_API_KEY, use_ors=True
-            )
-        else:
-            logger.info("  Using road network for driving distances...")
-            G_stations = make_graph_from_stations(
-                stations,
-                use_ors=False,
-                G_road=G_road,
-                station_to_node_mapping=station_to_node_mapping,
-            )
+        logger.info("  Using road network for driving distances...")
+        G_stations = make_graph_from_stations(
+            stations,
+            use_ors=False,
+            G_road=G_road,
+            station_to_node_mapping=station_to_node_mapping,
+        )
 
         logger.info(
             f"✓ Station graph created: {G_stations.vcount()} nodes, {G_stations.ecount()} edges"
