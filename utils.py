@@ -332,18 +332,19 @@ def remove_edges_far_from_stations_graph(
 ):
     """
     Remove edges that are farther than max_distance (network distance) 
-    from any gas station.
+    from any gas station, using a multi-source Dijkstra.
 
     Args:
-        G: igraph Graph object (road network, already projected)
-        stations_gdf: GeoDataFrame with gas station data (same CRS as graph)
+        G: igraph Graph object (road network, already projected, edges have "length" attr in meters)
+        stations_gdf: GeoDataFrame with gas station geometries (same CRS as graph)
         max_distance: Maximum distance in meters along the graph
-        station_to_node_mapping: Optional mapping from station indices to graph node indices
+        station_to_node_mapping: Optional mapping {station_idx -> graph_node_idx}
 
     Returns:
         Modified graph with distant edges removed
     """
     import numpy as np
+    import heapq
 
     logger.info(
         f"Removing edges farther than {max_distance:,} meters (network distance) from any gas station"
@@ -357,39 +358,60 @@ def remove_edges_far_from_stations_graph(
         logger.warning("No stations provided - keeping all edges")
         return G
 
-    # Map station geometries to nearest graph nodes
-    if station_to_node_mapping is None:
-        # fallback: brute force nearest node
+    # --- Step 1: Determine station nodes ---
+    if station_to_node_mapping is not None:
+        station_nodes = list(station_to_node_mapping.values())
+    else:
         station_nodes = []
         for _, station in stations_gdf.iterrows():
             sx, sy = station.geometry.x, station.geometry.y
-            dists = [(i, (G.vs[i]["x"] - sx) ** 2 + (G.vs[i]["y"] - sy) ** 2) for i in range(G.vcount())]
-            nearest_node = min(dists, key=lambda x: x[1])[0]
+            nearest_node = min(
+                range(G.vcount()),
+                key=lambda i: (G.vs[i]["x"] - sx) ** 2 + (G.vs[i]["y"] - sy) ** 2
+            )
             station_nodes.append(nearest_node)
-    else:
-        station_nodes = list(station_to_node_mapping.values())
+
+    station_nodes = list(set(station_nodes))  # remove duplicates
 
     if not station_nodes:
         logger.warning("No valid station-to-node mapping found - keeping all edges")
         return G
 
-    logger.debug(f"Using {len(station_nodes)} stations mapped to graph nodes")
+    logger.info(f"Using {len(station_nodes)} stations mapped to graph nodes")
 
-    # Compute shortest path distance from every node to the nearest station
-    logger.info("Running multi-source Dijkstra...")
-    dist_matrix = G.shortest_paths(source=station_nodes, weights="length")  # "length" must exist on edges
+    # --- Step 2: Multi-source Dijkstra ---
+    dist = np.full(G.vcount(), np.inf)
+    visited = np.zeros(G.vcount(), dtype=bool)
+    pq = []
 
-    # Reduce to min distance per node
-    min_dist_per_node = np.min(dist_matrix, axis=0)
+    for s in station_nodes:
+        if 0 <= s < G.vcount():
+            dist[s] = 0.0
+            heapq.heappush(pq, (0.0, s))
+        else:
+            logger.warning(f"Invalid station node ID: {s}")
 
-    # Remove edges if both endpoints are farther than max_distance
+    while pq:
+        d, u = heapq.heappop(pq)
+        if visited[u]:
+            continue
+        visited[u] = True
+
+        if d > max_distance:
+            continue  # No need to propagate farther than max_distance
+
+        for e in G.vs[u].all_edges():
+            v = e.target if e.source == u else e.source
+            w = e["length"] if "length" in e.attributes() else 1.0
+            if dist[v] > d + w:
+                dist[v] = d + w
+                heapq.heappush(pq, (dist[v], v))
+
+    # --- Step 3: Remove edges with endpoints farther than max_distance ---
     edges_to_remove = []
     for i, edge in enumerate(G.es):
         u, v = edge.source, edge.target
-        d_u = min_dist_per_node[u]
-        d_v = min_dist_per_node[v]
-
-        if d_u > max_distance and d_v > max_distance:
+        if dist[u] > max_distance and dist[v] > max_distance:
             edges_to_remove.append(i)
 
     logger.info(
