@@ -217,6 +217,7 @@ def main():
         random_stations_to_remove = random.sample(
             all_station_indices, min(Config.N_REMOVE, len(all_station_indices))
         )
+        assert random_stations_to_remove != stations_to_remove
 
         # Save random-removed stations to GeoPackage with k-NN distance data
         save_removed_stations_to_geopackage(
