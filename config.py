@@ -16,8 +16,8 @@ class Config:
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    USE_LOCAL_PBF = True
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
+    SIMPLIFY_ROAD_NETWORK = True
 
     # Distance calculation method
     USE_ORS_FOR_STATIONS = (

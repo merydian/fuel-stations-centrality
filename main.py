@@ -12,7 +12,6 @@ from datetime import datetime
 from config import Config
 from centrality import farness_centrality
 from stats import get_graph_stats
-from downloader import download_or_load_road_network
 from utils import (
     save_graph_to_geopackage,
     remove_edges_far_from_stations,
@@ -26,6 +25,7 @@ from utils import (
     save_stations_to_geopackage,
 )
 from ors_router import make_graph_from_stations
+import osmnx as ox
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,6 @@ def main():
     # Configuration validation and setup
     Config.ensure_directories()
     Config.validate_config()
-
-    # Get PBF file stem for output filenames
-    pbf_stem = Config.LOCAL_PBF_PATH.stem if hasattr(Config, "LOCAL_PBF_PATH") else "unknown"
 
     # Log analysis start
     time.time()
@@ -66,7 +63,14 @@ def main():
         step_start = log_step_start(
             "0", "Downloading/Loading road network from OpenStreetMap"
         )
-        G_road = download_or_load_road_network(Config.PLACE)
+        road_filename = Config.get_road_filename(Config.PLACE)
+        road_filepath = Config.DATA_DIR / road_filename
+
+        logger.info(f"Loading cached road network from {road_filepath}")
+        G_road = ox.load_graphml(road_filepath)
+        logger.info(
+            f"✓ Cached road network loaded: {len(G_road.nodes):,} nodes, {len(G_road.edges):,} edges"
+        )
         log_step_end(step_start, "0", "Road network acquisition")
 
         # Step 1: Load fuel stations
