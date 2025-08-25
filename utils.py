@@ -1,3 +1,4 @@
+from shapely import union_all
 from shapely.geometry import Point, LineString
 import geopandas as gpd
 import logging
@@ -273,6 +274,7 @@ def get_gas_stations_from_graph(G, area_polygon=None):
 
     Args:
         G: NetworkX graph from osmnx
+        area_polygon: optional Shapely polygon to restrict the search
 
     Returns:
         GeoDataFrame of gas stations with Point geometries
@@ -284,14 +286,14 @@ def get_gas_stations_from_graph(G, area_polygon=None):
         nodes_gdf = ox.graph_to_gdfs(G, edges=False)
         logger.debug(f"Graph has {len(nodes_gdf)} nodes")
 
-        # Get convex hull of nodes (this should already be in EPSG:4326)
-        area_polygon = nodes_gdf.unary_union.convex_hull
-        logger.debug("Computed convex hull of graph nodes")
+        # Compute area polygon if not provided
+        if area_polygon is None:
+            area_polygon = union_all(nodes_gdf.geometry).convex_hull
+            logger.debug("Computed convex hull of graph nodes")
 
         # Query gas stations within the polygon
         tags = {"amenity": "fuel"}
         logger.info("Downloading gas stations from OpenStreetMap...")
-
         gas_stations = ox.features_from_polygon(area_polygon, tags=tags)
         logger.info(f"Downloaded {len(gas_stations)} gas station features")
 
@@ -313,8 +315,7 @@ def get_gas_stations_from_graph(G, area_polygon=None):
         if gas_points:
             gas_stations_gdf = gpd.GeoDataFrame(
                 gas_points, crs=f"EPSG:{Config.EPSG_CODE}"
-            )
-            gas_stations_gdf = gas_stations_gdf.reset_index(drop=True)
+            ).reset_index(drop=True)
             logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations")
         else:
             # Create empty GeoDataFrame with expected structure
