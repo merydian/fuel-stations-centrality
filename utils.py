@@ -294,7 +294,7 @@ def get_gas_stations_from_graph(G, area_polygon=None):
 
         # Query gas stations within the polygon
         tags = {"amenity": "fuel"}
-        logger.info("Gettimg gas stations from OpenStreetMap...")
+        logger.info("Getting gas stations from OpenStreetMap...")
         gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, polygon=area_polygon, tags=tags)
         logger.info(f"Downloaded {len(gas_stations)} gas station features")
 
