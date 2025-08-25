@@ -284,6 +284,7 @@ def get_gas_stations_from_graph(G, area_polygon=None):
     try:
         # Convert graph nodes to GeoDataFrame
         nodes_gdf = ox.graph_to_gdfs(G, edges=False)
+        nodes_gdf.fillna(0, inplace=True)
         logger.debug(f"Graph has {len(nodes_gdf)} nodes")
 
         # Compute area polygon if not provided
