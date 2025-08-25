@@ -14,7 +14,7 @@ from centrality import farness_centrality
 from stats import get_graph_stats
 from utils import (
     save_graph_to_geopackage,
-    remove_edges_far_from_stations,
+    remove_edges_far_from_stations_graph,
     get_gas_stations_from_graph,
     setup_logging,
     log_step_start,
@@ -132,7 +132,7 @@ def main():
         logger.info(
             "  Cleaning up edges far from gas stations from baseline road network..."
         )
-        G_road_ig = remove_edges_far_from_stations(
+        G_road_ig = remove_edges_far_from_stations_graph(
             G_road_ig, stations, Config.MAX_DISTANCE, station_to_node_mapping
         )
 
@@ -201,7 +201,7 @@ def main():
         )
         # Create filtered stations GeoDataFrame (excluding removed stations)
         remaining_stations = stations[~stations.index.isin(stations_to_remove)]
-        G_road_ig = remove_edges_far_from_stations(
+        G_road_ig = remove_edges_far_from_stations_graph(
             G_road_ig, remaining_stations, Config.MAX_DISTANCE
         )
 
@@ -237,7 +237,7 @@ def main():
         remaining_stations_random = stations[
             ~stations.index.isin(random_stations_to_remove)
         ]
-        G_road_ig = remove_edges_far_from_stations(
+        G_road_ig = remove_edges_far_from_stations_graph(
             G_road_ig, remaining_stations_random, Config.MAX_DISTANCE
         )
 

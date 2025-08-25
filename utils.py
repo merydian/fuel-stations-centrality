@@ -327,28 +327,26 @@ def get_gas_stations_from_graph(G, area_polygon=None):
         raise
 
 
-def remove_edges_far_from_stations(
+def remove_edges_far_from_stations_graph(
     G, stations_gdf, max_distance, station_to_node_mapping=None
 ):
     """
-    Remove edges that are farther than max_distance from any gas station.
-    Uses precise UTM projection for accurate distance calculations.
+    Remove edges that are farther than max_distance (network distance) 
+    from any gas station.
 
     Args:
-        G: igraph Graph object (road network)
-        stations_gdf: GeoDataFrame with gas station data
-        max_distance: Maximum distance in meters from any station
+        G: igraph Graph object (road network, already projected)
+        stations_gdf: GeoDataFrame with gas station data (same CRS as graph)
+        max_distance: Maximum distance in meters along the graph
         station_to_node_mapping: Optional mapping from station indices to graph node indices
 
     Returns:
         Modified graph with distant edges removed
     """
     import numpy as np
-    from scipy.spatial import cKDTree
-    import pyproj
 
     logger.info(
-        f"Removing edges farther than {max_distance:,} meters from any gas station"
+        f"Removing edges farther than {max_distance:,} meters (network distance) from any gas station"
     )
 
     if G.vcount() == 0:
@@ -359,72 +357,46 @@ def remove_edges_far_from_stations(
         logger.warning("No stations provided - keeping all edges")
         return G
 
-    logger.info(f"Using UTM projection {Config.EPSG_CODE} for precise distance calculations")
+    # Map station geometries to nearest graph nodes
+    if station_to_node_mapping is None:
+        # fallback: brute force nearest node
+        station_nodes = []
+        for _, station in stations_gdf.iterrows():
+            sx, sy = station.geometry.x, station.geometry.y
+            dists = [(i, (G.vs[i]["x"] - sx) ** 2 + (G.vs[i]["y"] - sy) ** 2) for i in range(G.vcount())]
+            nearest_node = min(dists, key=lambda x: x[1])[0]
+            station_nodes.append(nearest_node)
+    else:
+        station_nodes = list(station_to_node_mapping.values())
 
-    # Create transformer for coordinate conversion
-    transformer = pyproj.Transformer.from_crs("EPSG:4326", Config.EPSG_CODE, always_xy=True)
-
-    # Transform station coordinates to UTM
-    station_coords_utm = []
-    for _, station in stations_gdf.iterrows():
-        lon, lat = station.geometry.x, station.geometry.y
-        x_utm, y_utm = transformer.transform(lon, lat)
-        station_coords_utm.append([x_utm, y_utm])
-
-    if not station_coords_utm:
-        logger.warning("No valid station coordinates found - keeping all edges")
+    if not station_nodes:
+        logger.warning("No valid station-to-node mapping found - keeping all edges")
         return G
 
-    station_coords_utm = np.array(station_coords_utm)
-    logger.debug(
-        f"Transformed {len(station_coords_utm)} station locations to UTM coordinates"
-    )
+    logger.debug(f"Using {len(station_nodes)} stations mapped to graph nodes")
 
-    # Build KDTree for efficient nearest neighbor search in UTM coordinates
-    station_tree = cKDTree(station_coords_utm)
+    # Compute shortest path distance from every node to the nearest station
+    logger.info("Running multi-source Dijkstra...")
+    dist_matrix = G.shortest_paths(source=station_nodes, weights="length")  # "length" must exist on edges
 
-    # Process edges and check distances
+    # Reduce to min distance per node
+    min_dist_per_node = np.min(dist_matrix, axis=0)
+
+    # Remove edges if both endpoints are farther than max_distance
     edges_to_remove = []
-    total_edges = G.ecount()
-
-    logger.debug("Computing distances from edge midpoints to nearest stations...")
-
     for i, edge in enumerate(G.es):
         u, v = edge.source, edge.target
+        d_u = min_dist_per_node[u]
+        d_v = min_dist_per_node[v]
 
-        # Get geographic coordinates of edge endpoints
-        lon1, lat1 = G.vs[u]["x"], G.vs[u]["y"]
-        lon2, lat2 = G.vs[v]["x"], G.vs[v]["y"]
-
-        # Calculate edge midpoint in geographic coordinates
-        midpoint_lon = (lon1 + lon2) / 2
-        midpoint_lat = (lat1 + lat2) / 2
-
-        # Transform midpoint to UTM coordinates
-        midpoint_x_utm, midpoint_y_utm = transformer.transform(
-            midpoint_lon, midpoint_lat
-        )
-        edge_midpoint_utm = np.array([midpoint_x_utm, midpoint_y_utm])
-
-        # Find distance to nearest station in UTM coordinates (meters)
-        distance_to_nearest_station, _ = station_tree.query(edge_midpoint_utm)
-
-        if distance_to_nearest_station > max_distance:
+        if d_u > max_distance and d_v > max_distance:
             edges_to_remove.append(i)
 
-        if (i + 1) % max(1, total_edges // 10) == 0:
-            logger.debug(
-                f"Processed {i + 1}/{total_edges} edges ({100 * (i + 1) / total_edges:.1f}%)"
-            )
-
     logger.info(
-        f"Found {len(edges_to_remove)} edges farther than {max_distance:,} meters from stations "
-        f"({100 * len(edges_to_remove) / total_edges:.1f}% of all edges)"
+        f"Found {len(edges_to_remove)} edges beyond {max_distance:,}m network distance from stations"
     )
 
     if edges_to_remove:
-        # Remove the distant edges (in reverse order to maintain indices)
-        logger.debug("Removing edges far from stations...")
         G.delete_edges(sorted(edges_to_remove, reverse=True))
         logger.info(
             f"Removed {len(edges_to_remove)} distant edges. "
