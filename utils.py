@@ -465,13 +465,25 @@ def remove_edges_far_from_stations_graph(
 
     # --- Step 1: Ensure consistent CRS and determine station nodes ---
     if station_to_node_mapping is not None:
-        # Validate station nodes from mapping
+        # The mapping contains OSM node IDs, but igraph uses sequential indices
+        # We need to convert OSM node IDs to igraph node indices
         station_nodes = []
-        for station_idx, node_id in station_to_node_mapping.items():
-            if 0 <= node_id < G.vcount():
-                station_nodes.append(node_id)
+        
+        # Create mapping from OSM node ID to igraph index
+        osm_to_igraph = {}
+        for i in range(G.vcount()):
+            if "name" in G.vs[i].attributes():
+                osm_id = int(G.vs[i]["name"])  # OSM node ID stored in 'name' attribute
+                osm_to_igraph[osm_id] = i
+        
+        logger.debug(f"Created OSM to igraph mapping for {len(osm_to_igraph)} nodes")
+        
+        for station_idx, osm_node_id in station_to_node_mapping.items():
+            if osm_node_id in osm_to_igraph:
+                igraph_node_idx = osm_to_igraph[osm_node_id]
+                station_nodes.append(igraph_node_idx)
             else:
-                logger.warning(f"Invalid node ID {node_id} for station {station_idx} (graph has {G.vcount()} nodes)")
+                logger.warning(f"OSM node ID {osm_node_id} for station {station_idx} not found in igraph")
     else:
         # Use Config's unified projection logic
         stations_gdf = Config.ensure_target_crs(stations_gdf, "stations for edge removal")
@@ -1261,7 +1273,9 @@ def process_fuel_stations(stations, max_stations=None):
     """Process and validate fuel stations data."""
     logger = logging.getLogger(__name__)
 
-    len(stations)
+    # Use config parameter if no explicit max_stations provided
+    if max_stations is None:
+        max_stations = Config.MAX_STATIONS
 
     # Limit number of stations if needed
     if max_stations and len(stations) > max_stations:
@@ -1280,19 +1294,4 @@ def process_fuel_stations(stations, max_stations=None):
         )
 
     return stations
-    if max_stations and len(stations) > max_stations:
-        logger.warning(
-            f"Found {len(stations)} stations, limiting to {max_stations} for performance"
-        )
-        stations = stations.sample(
-            n=max_stations, random_state=Config.RANDOM_SEED
-        ).reset_index(drop=True)
 
-    logger.info(f"✓ Fuel stations processed: {len(stations)} stations")
-
-    if len(stations) < Config.MIN_STATIONS_REQUIRED:
-        raise ValueError(
-            f"Insufficient fuel stations: {len(stations)} < {Config.MIN_STATIONS_REQUIRED} minimum required"
-        )
-
-    return stations

@@ -24,6 +24,7 @@ from utils import (
     save_removed_stations_to_geopackage,
     save_stations_to_geopackage,
     make_graph_from_stations,
+    process_fuel_stations,
 )
 import osmnx as ox
 
@@ -56,6 +57,7 @@ def main():
     logger.info(f"  • k-NN parameter: {Config.K_NN}")
     logger.info(f"  • Removal criteria: {Config.REMOVAL_KIND}")
     logger.info(f"  • Station clustering radius: {Config.CLUSTER_RADIUS}m")
+    logger.info(f"  • Max stations limit: {Config.MAX_STATIONS if Config.MAX_STATIONS else 'No limit'}")
     logger.info("")
 
     try:
@@ -79,6 +81,9 @@ def main():
         )
         stations = get_gas_stations_from_graph(G_road)
         
+        # Process and potentially limit stations
+        stations = process_fuel_stations(stations)
+        
         # Log clustering information if available
         if 'cluster_id' in stations.columns:
             total_original = stations['stations_in_cluster'].sum()
@@ -95,6 +100,12 @@ def main():
             logger.info(f"  • Clustering radius: {Config.CLUSTER_RADIUS}m")
         else:
             logger.info(f"✓ No clustering applied: {len(stations):,} stations")
+            
+        # Log station limitation if applied
+        if Config.MAX_STATIONS and 'cluster_id' in stations.columns:
+            original_after_clustering = len(stations)
+            if original_after_clustering > Config.MAX_STATIONS:
+                logger.info(f"  • Station limit applied: {original_after_clustering} → {Config.MAX_STATIONS} stations")
             
         log_step_end(step_start, "1", "Fuel station extraction")
 

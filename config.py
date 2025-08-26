@@ -10,13 +10,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Mongolia"
+    PLACE = "Cook"
     MAX_DISTANCE = 50_000  # meters
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "cook-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Station clustering parameters
@@ -24,6 +24,7 @@ class Config:
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
+    MAX_STATIONS = 100  # Maximum number of stations to use (None = no limit)
 
     # Random seed for reproducibility
     RANDOM_SEED = 42
@@ -104,8 +105,15 @@ class Config:
 
         if cls.MAX_DISTANCE <= 0:
             raise ValueError("MAX_DISTANCE must be positive")
-        if cls.MAX_DISTANCE <= 0:
-            raise ValueError("MAX_DISTANCE must be positive")
+            
+        if cls.MAX_STATIONS is not None and cls.MAX_STATIONS <= 0:
+            raise ValueError("MAX_STATIONS must be positive or None")
+            
+        if cls.MAX_STATIONS is not None and cls.MAX_STATIONS < cls.MIN_STATIONS_REQUIRED:
+            raise ValueError(f"MAX_STATIONS ({cls.MAX_STATIONS}) must be >= MIN_STATIONS_REQUIRED ({cls.MIN_STATIONS_REQUIRED})")
+            
+        if cls.MAX_STATIONS is not None and cls.N_REMOVE >= cls.MAX_STATIONS:
+            raise ValueError(f"N_REMOVE ({cls.N_REMOVE}) must be < MAX_STATIONS ({cls.MAX_STATIONS})")
 
     @classmethod
     def get_road_filepath(cls) -> Path:
