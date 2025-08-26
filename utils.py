@@ -532,6 +532,30 @@ def remove_edges_far_from_stations_graph(
                     
         logger.debug(f"Computed distances to {len([d for d in min_distances if d != np.inf])} reachable nodes")
         
+        # Log distribution of minimum distances
+        finite_distances = min_distances[min_distances != np.inf]
+        if len(finite_distances) > 0:
+            logger.info(f"Minimum distance statistics:")
+            logger.info(f"  • Nodes within reach: {len(finite_distances):,} / {len(min_distances):,}")
+            logger.info(f"  • Min distance: {np.min(finite_distances):.1f}m")
+            logger.info(f"  • Max distance: {np.max(finite_distances):.1f}m")
+            logger.info(f"  • Mean distance: {np.mean(finite_distances):.1f}m")
+            logger.info(f"  • Median distance: {np.median(finite_distances):.1f}m")
+            
+            # Count nodes at different distance thresholds
+            within_max = np.sum(finite_distances <= max_distance)
+            beyond_max = np.sum(finite_distances > max_distance)
+            logger.info(f"  • Nodes within {max_distance:,}m: {within_max:,}")
+            logger.info(f"  • Nodes beyond {max_distance:,}m: {beyond_max:,}")
+            
+            # Show some percentiles
+            percentiles = [10, 25, 50, 75, 90, 95, 99]
+            for p in percentiles:
+                val = np.percentile(finite_distances, p)
+                logger.debug(f"  • {p}th percentile: {val:.1f}m")
+        else:
+            logger.warning("No finite distances found - all nodes unreachable from stations")
+        
     except Exception as e:
         logger.error(f"Failed to compute shortest paths using igraph: {e}")
         return G, 0
