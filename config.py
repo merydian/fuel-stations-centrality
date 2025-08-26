@@ -40,7 +40,10 @@ class Config:
 
     # Coordinate Reference System (CRS) configuration
     WGS84_EPSG = 4326  # Input CRS from OSM data
-    EPSG_CODE = 32648  # Target projected CRS for analysis (UTM Zone 42N for Afghanistan)
+    EPSG_CODE = 32705  # Target projected CRS for analysis (UTM Zone 42N for Afghanistan)
+
+    # Logging configuration
+    LOG_LEVEL = "DEBUG"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
     @classmethod
     def get_wgs84_crs(cls):

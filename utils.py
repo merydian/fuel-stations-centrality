@@ -824,23 +824,20 @@ def save_stations_to_geopackage(
 
 # Configure logging with more detailed format
 def setup_logging():
-    """Set up comprehensive logging configuration."""
+    """Setup logging configuration with level from config."""
+    from config import Config
+    
+    # Convert string level to logging constant
+    log_level = getattr(logging, Config.LOG_LEVEL.upper(), logging.INFO)
+    
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[
-            logging.FileHandler(Config.LOG_FILE, mode="w"),
             logging.StreamHandler(),
-        ],
+            logging.FileHandler("fuel_stations_analysis.log")
+        ]
     )
-
-    # Set specific log levels for different modules
-    logging.getLogger("urllib3").setLevel(logging.WARNING)
-    logging.getLogger("requests").setLevel(logging.WARNING)
-    logging.getLogger("fiona").setLevel(logging.WARNING)
-    logging.getLogger("geopandas").setLevel(logging.WARNING)
-    logging.getLogger("shapely").setLevel(logging.WARNING)
-    logging.getLogger("pyproj").setLevel(logging.WARNING)
 
 
 def log_step_start(step_num, description):

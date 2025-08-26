@@ -58,6 +58,7 @@ def main():
     logger.info(f"  • Removal criteria: {Config.REMOVAL_KIND}")
     logger.info(f"  • Station clustering radius: {Config.CLUSTER_RADIUS}m")
     logger.info(f"  • Max stations limit: {Config.MAX_STATIONS if Config.MAX_STATIONS else 'No limit'}")
+    logger.info(f"  • Log level: {Config.LOG_LEVEL}")
     logger.info("")
 
     try:
