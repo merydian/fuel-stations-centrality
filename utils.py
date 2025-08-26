@@ -1162,59 +1162,36 @@ def make_graph_from_stations_via_road_network(
     
     try:
         import networkx as nx
+        # For larger graphs, use optimized approach
+        logger.debug("Using Numba-optimized approach for large graph")
         
-        # Use traditional NetworkX approach for smaller graphs or fallback
-        if n <= 100:  # For small graphs, overhead might not be worth it
-            logger.debug("Using traditional NetworkX approach for small graph")
-            distances = np.full((n, n), np.inf)
-            
-            for i, source_node in enumerate(road_nodes):
-                if source_node in G_road:
-                    try:
-                        path_lengths = nx.single_source_dijkstra_path_length(
-                            G_road, source_node, weight="length"
-                        )
-                        
-                        for j, target_node in enumerate(road_nodes):
-                            if target_node in path_lengths:
-                                distances[i, j] = path_lengths[target_node]
-                                
-                    except nx.NetworkXNoPath:
-                        pass
-                        
-                if (i + 1) % max(1, n // 10) == 0:
-                    logger.debug(f"Computed distances from {i + 1}/{n} stations")
-        else:
-            # For larger graphs, use optimized approach
-            logger.debug("Using Numba-optimized approach for large graph")
-            
-            # Pre-compute all shortest paths from station nodes
-            all_path_lengths = {}
-            for i, source_node in enumerate(road_nodes):
-                if source_node in G_road:
-                    try:
-                        path_lengths = nx.single_source_dijkstra_path_length(
-                            G_road, source_node, weight="length"
-                        )
-                        all_path_lengths[i] = path_lengths
-                    except nx.NetworkXNoPath:
-                        all_path_lengths[i] = {}
-                        
-                if (i + 1) % max(1, n // 10) == 0:
-                    logger.debug(f"Pre-computed paths from {i + 1}/{n} stations")
-            
-            # Convert to Numba-compatible format for distance matrix computation
-            distances = np.full((n, n), np.inf)
-            
-            # Optimized distance matrix filling using vectorized operations
-            road_nodes_array = np.array(road_nodes, dtype=np.int64)
-            
-            # Compute distances using Numba-optimized function
-            distances = _compute_station_distances_numba(
-                road_nodes_array, n, 
-                np.array(list(all_path_lengths.keys())), 
-                np.array([v for d in all_path_lengths.values() for v in d.values()])
-            )
+        # Pre-compute all shortest paths from station nodes
+        all_path_lengths = {}
+        for i, source_node in enumerate(road_nodes):
+            if source_node in G_road:
+                try:
+                    path_lengths = nx.single_source_dijkstra_path_length(
+                        G_road, source_node, weight="length"
+                    )
+                    all_path_lengths[i] = path_lengths
+                except nx.NetworkXNoPath:
+                    all_path_lengths[i] = {}
+                    
+            if (i + 1) % max(1, n // 10) == 0:
+                logger.debug(f"Pre-computed paths from {i + 1}/{n} stations")
+        
+        # Convert to Numba-compatible format for distance matrix computation
+        distances = np.full((n, n), np.inf)
+        
+        # Optimized distance matrix filling using vectorized operations
+        road_nodes_array = np.array(road_nodes, dtype=np.int64)
+        
+        # Compute distances using Numba-optimized function
+        distances = _compute_station_distances_numba(
+            road_nodes_array, n, 
+            np.array(list(all_path_lengths.keys())), 
+            np.array([v for d in all_path_lengths.values() for v in d.values()])
+        )
 
     except Exception as e:
         logger.error(f"Failed to compute road network distances: {e}")
