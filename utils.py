@@ -512,8 +512,36 @@ def remove_edges_far_from_stations_graph(
     # --- Step 2: Use igraph's distances method to compute distances from all station nodes ---
     logger.debug("Computing shortest paths from station nodes using igraph...")
     
+    # Debug: Check coordinate ranges to ensure proper projection
+    if G.vcount() > 0:
+        x_coords = [G.vs[i]["x"] for i in range(min(10, G.vcount()))]
+        y_coords = [G.vs[i]["y"] for i in range(min(10, G.vcount()))]
+        logger.debug(f"Sample node coordinates - X range: {min(x_coords):.1f} to {max(x_coords):.1f}")
+        logger.debug(f"Sample node coordinates - Y range: {min(y_coords):.1f} to {max(y_coords):.1f}")
+        
+        # Check if coordinates look like they're in degrees (WGS84) instead of meters (projected)
+        if max(x_coords) < 200 and max(y_coords) < 200:
+            logger.warning("⚠️  Coordinates appear to be in degrees (WGS84) rather than meters (projected CRS)")
+            logger.warning("This would cause distance calculations to be in degrees instead of meters")
+    
     # Get shortest path distances from all station nodes to all other nodes
     weight_attr = "length" if "length" in G.es.attributes() else None
+    logger.debug(f"Using weight attribute: {weight_attr}")
+    
+    # Debug: Check a few edge lengths
+    if G.ecount() > 0:
+        sample_edges = range(min(5, G.ecount()))
+        edge_lengths = []
+        for i in sample_edges:
+            if weight_attr and weight_attr in G.es[i].attributes():
+                length = G.es[i][weight_attr]
+                edge_lengths.append(length)
+        
+        if edge_lengths:
+            logger.debug(f"Sample edge lengths: {[f'{l:.2f}' for l in edge_lengths[:5]]}")
+            if max(edge_lengths) < 1:
+                logger.warning("⚠️  Edge lengths are very small - possibly in degrees instead of meters")
+    
     try:
         # Use distances method (current) instead of shortest_paths (deprecated)
         distances_matrix = G.distances(
@@ -541,6 +569,15 @@ def remove_edges_far_from_stations_graph(
             logger.info(f"  • Max distance: {np.max(finite_distances):.1f}m")
             logger.info(f"  • Mean distance: {np.mean(finite_distances):.1f}m")
             logger.info(f"  • Median distance: {np.median(finite_distances):.1f}m")
+            
+            # Check if distances might be in wrong units
+            if np.max(finite_distances) < 10:
+                logger.warning("⚠️  PROJECTION ISSUE DETECTED: Distances are unusually small!")
+                logger.warning("This suggests coordinates are in degrees rather than meters.")
+                logger.warning("Check CRS configuration and graph projection.")
+                # Convert to what distances would be in meters if they're currently in degrees
+                approx_meters_max = np.max(finite_distances) * 111000  # rough degrees to meters
+                logger.warning(f"If distances are in degrees, max would be ~{approx_meters_max:.0f}m")
             
             # Count nodes at different distance thresholds
             within_max = np.sum(finite_distances <= max_distance)

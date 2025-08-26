@@ -40,7 +40,7 @@ class Config:
 
     # Coordinate Reference System (CRS) configuration
     WGS84_EPSG = 4326  # Input CRS from OSM data
-    EPSG_CODE = 32647  # Target projected CRS for analysis (UTM Zone 42N for Afghanistan)
+    EPSG_CODE = 32648  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
 
     # Logging configuration
     LOG_LEVEL = "DEBUG"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
