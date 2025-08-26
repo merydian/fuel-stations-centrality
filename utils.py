@@ -791,32 +791,38 @@ def save_stations_to_geopackage(
         # Create a copy to avoid modifying original data
         stations_to_save = stations_gdf.copy()
 
-        # Add metadata
-        stations_to_save["station_index"] = stations_to_save.index
-        stations_to_save["extraction_source"] = "OpenStreetMap"
+        # Clean problematic column names
+        problematic_columns = ['FIXME', 'fixme']  # Add other problematic names as needed
+        columns_to_drop = [col for col in stations_to_save.columns if col in problematic_columns]
         
-        # Add clustering information if available
-        if 'cluster_id' in stations_to_save.columns:
-            stations_to_save["is_clustered"] = stations_to_save["stations_in_cluster"] > 1
-            logger.debug(f"Added clustering metadata: {sum(stations_to_save['is_clustered'])} clustered stations")
-
-        # Ensure geometry is valid
-        stations_to_save = stations_to_save[~stations_to_save.geometry.is_empty]
-
-        # Reset index for cleaner output
-        stations_to_save = stations_to_save.reset_index(drop=True)
-
-        logger.info(f"Writing {len(stations_to_save)} gas stations to {output_path}...")
+        if columns_to_drop:
+            logger.info(f"Dropping problematic columns: {columns_to_drop}")
+            stations_to_save = stations_to_save.drop(columns=columns_to_drop)
+        
+        # Also clean any columns with special characters that might cause issues
+        rename_dict = {}
+        for col in stations_to_save.columns:
+            if col != 'geometry':  # Don't rename geometry column
+                # Replace problematic characters
+                clean_col = col.replace(':', '_').replace(' ', '_').replace('-', '_')
+                # Remove or replace other special characters
+                clean_col = ''.join(c if c.isalnum() or c == '_' else '_' for c in clean_col)
+                # Ensure it doesn't start with a number
+                if clean_col and clean_col[0].isdigit():
+                    clean_col = 'col_' + clean_col
+                # Limit length to avoid database field name limits
+                clean_col = clean_col[:63]  # Many databases have 63 char limit
+                
+                if clean_col != col:
+                    rename_dict[col] = clean_col
+        
+        if rename_dict:
+            logger.info(f"Renaming columns for compatibility: {len(rename_dict)} columns")
+            stations_to_save = stations_to_save.rename(columns=rename_dict)
+        
         stations_to_save.to_file(output_path, layer="gas_stations", driver="GPKG")
-
-        logger.info(f"Successfully saved gas stations to {output_path}")
-        logger.debug(f"  Number of stations: {len(stations_to_save)}")
-        logger.debug(f"  CRS: {stations_to_save.crs}")
+        logger.info(f"✓ Gas stations saved to {output_path}")
         
-        if 'cluster_id' in stations_to_save.columns:
-            clustered_count = sum(stations_to_save["is_clustered"])
-            logger.debug(f"  Clustered stations: {clustered_count}")
-
     except Exception as e:
         logger.error(f"Failed to save gas stations to {output_path}: {e}")
         raise
