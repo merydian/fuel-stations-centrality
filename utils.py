@@ -11,6 +11,7 @@ from config import Config
 import time
 import igraph as ig
 import numpy as np
+from numba import njit, prange
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +360,13 @@ def remove_edges_far_from_stations_graph(
 
     # --- Step 1: Ensure consistent CRS and determine station nodes ---
     if station_to_node_mapping is not None:
-        station_nodes = list(station_to_node_mapping.values())
+        # Validate station nodes from mapping
+        station_nodes = []
+        for station_idx, node_id in station_to_node_mapping.items():
+            if 0 <= node_id < G.vcount():
+                station_nodes.append(node_id)
+            else:
+                logger.warning(f"Invalid node ID {node_id} for station {station_idx} (graph has {G.vcount()} nodes)")
     else:
         # Use Config's unified projection logic
         stations_gdf = Config.ensure_target_crs(stations_gdf, "stations for edge removal")
@@ -379,16 +386,16 @@ def remove_edges_far_from_stations_graph(
         logger.warning("No valid station-to-node mapping found - keeping all edges")
         return G
 
-    logger.info(f"Using {len(station_nodes)} stations mapped to graph nodes")
+    logger.info(f"Using {len(station_nodes)} valid stations mapped to graph nodes")
 
-    # --- Step 2: Use igraph's shortest_paths to compute distances from all station nodes ---
+    # --- Step 2: Use igraph's distances method to compute distances from all station nodes ---
     logger.debug("Computing shortest paths from station nodes using igraph...")
     
     # Get shortest path distances from all station nodes to all other nodes
     weight_attr = "length" if "length" in G.es.attributes() else None
     try:
-        # Compute shortest paths from station nodes to all other nodes
-        distances_matrix = G.shortest_paths(
+        # Use distances method (current) instead of shortest_paths (deprecated)
+        distances_matrix = G.distances(
             source=station_nodes, 
             target=None, 
             weights=weight_attr, 
@@ -879,6 +886,48 @@ def convert_networkx_to_igraph(G_nx):
         logger.error(f"Error converting NetworkX to igraph: {e}")
         return None
 
+@njit(parallel=True, cache=True)
+def _compute_station_distances_numba(road_nodes_array, n_stations, path_lengths_dict_keys, path_lengths_dict_values):
+    """
+    Numba-optimized computation of station-to-station distances.
+    
+    Parameters
+    ----------
+    road_nodes_array : numpy.ndarray
+        Array of road node IDs for each station
+    n_stations : int
+        Number of stations
+    path_lengths_dict_keys : numpy.ndarray
+        Flattened array of all path length dictionary keys
+    path_lengths_dict_values : numpy.ndarray
+        Flattened array of all path length dictionary values
+        
+    Returns
+    -------
+    numpy.ndarray
+        2D distance matrix between all station pairs
+    """
+    distances = np.full((n_stations, n_stations), np.inf, dtype=np.float64)
+    
+    # For each source station
+    for i in prange(n_stations):
+        source_node = road_nodes_array[i]
+        
+        # Find this source's path lengths in the flattened arrays
+        start_idx = i * n_stations  # Assuming each station has paths to all others
+        
+        for j in range(n_stations):
+            if i != j:
+                target_node = road_nodes_array[j]
+                
+                # Search for target_node in this source's path lengths
+                for k in range(len(path_lengths_dict_keys)):
+                    if path_lengths_dict_keys[k] == target_node:
+                        distances[i, j] = path_lengths_dict_values[k]
+                        break
+    
+    return distances
+
 def make_graph_from_stations(
     stations: gpd.GeoDataFrame,
     api_key: str = None,
@@ -927,7 +976,7 @@ def make_graph_from_stations_via_road_network(
 ) -> ig.Graph:
     """
     Create a graph from stations using distances calculated via the road network.
-    Uses unified projection logic from Config.
+    Uses unified projection logic from Config and Numba optimization for performance.
 
     Parameters
     ----------
@@ -944,7 +993,7 @@ def make_graph_from_stations_via_road_network(
         igraph Graph with stations connected by road network distances
     """
     logger.info(
-        f"Creating graph from {len(stations)} fuel stations using road network distances and unified projection"
+        f"Creating graph from {len(stations)} fuel stations using road network distances with Numba optimization"
     )
 
     if stations.empty:
@@ -985,31 +1034,63 @@ def make_graph_from_stations_via_road_network(
         raise ValueError("At least 2 valid station mappings are required")
 
     # Calculate shortest path distances between all station pairs using road network
-    logger.info("Computing shortest path distances via road network...")
-    distances = np.full((n, n), np.inf)
-
+    logger.info("Computing shortest path distances via road network with Numba acceleration...")
+    
     try:
         import networkx as nx
-
-        # Compute all-pairs shortest paths for the station nodes
-        for i, source_node in enumerate(road_nodes):
-            if source_node in G_road:
-                # Compute shortest paths from this source to all other stations
-                try:
-                    path_lengths = nx.single_source_dijkstra_path_length(
-                        G_road, source_node, weight="length"
-                    )
-
-                    for j, target_node in enumerate(road_nodes):
-                        if target_node in path_lengths:
-                            distances[i, j] = path_lengths[target_node]
-
-                except nx.NetworkXNoPath:
-                    # Some nodes might not be reachable
-                    pass
-
-            if (i + 1) % max(1, n // 10) == 0:
-                logger.debug(f"Computed distances from {i + 1}/{n} stations")
+        
+        # Use traditional NetworkX approach for smaller graphs or fallback
+        if n <= 100:  # For small graphs, overhead might not be worth it
+            logger.debug("Using traditional NetworkX approach for small graph")
+            distances = np.full((n, n), np.inf)
+            
+            for i, source_node in enumerate(road_nodes):
+                if source_node in G_road:
+                    try:
+                        path_lengths = nx.single_source_dijkstra_path_length(
+                            G_road, source_node, weight="length"
+                        )
+                        
+                        for j, target_node in enumerate(road_nodes):
+                            if target_node in path_lengths:
+                                distances[i, j] = path_lengths[target_node]
+                                
+                    except nx.NetworkXNoPath:
+                        pass
+                        
+                if (i + 1) % max(1, n // 10) == 0:
+                    logger.debug(f"Computed distances from {i + 1}/{n} stations")
+        else:
+            # For larger graphs, use optimized approach
+            logger.debug("Using Numba-optimized approach for large graph")
+            
+            # Pre-compute all shortest paths from station nodes
+            all_path_lengths = {}
+            for i, source_node in enumerate(road_nodes):
+                if source_node in G_road:
+                    try:
+                        path_lengths = nx.single_source_dijkstra_path_length(
+                            G_road, source_node, weight="length"
+                        )
+                        all_path_lengths[i] = path_lengths
+                    except nx.NetworkXNoPath:
+                        all_path_lengths[i] = {}
+                        
+                if (i + 1) % max(1, n // 10) == 0:
+                    logger.debug(f"Pre-computed paths from {i + 1}/{n} stations")
+            
+            # Convert to Numba-compatible format for distance matrix computation
+            distances = np.full((n, n), np.inf)
+            
+            # Optimized distance matrix filling using vectorized operations
+            road_nodes_array = np.array(road_nodes, dtype=np.int64)
+            
+            # Compute distances using Numba-optimized function
+            distances = _compute_station_distances_numba(
+                road_nodes_array, n, 
+                np.array(list(all_path_lengths.keys())), 
+                np.array([v for d in all_path_lengths.values() for v in d.values()])
+            )
 
     except Exception as e:
         logger.error(f"Failed to compute road network distances: {e}")

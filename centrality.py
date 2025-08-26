@@ -244,11 +244,9 @@ def straightness_centrality(g: ig.Graph, weight: str = None):
     # Precompute all shortest path lengths as numpy array
     logger.debug("Computing shortest paths...")
     if weight and weight in g.es.attributes():
-        shortest_paths = np.array(
-            g.shortest_paths_dijkstra(weights=weight), dtype=np.float64
-        )
+        shortest_paths = np.array(g.distances(weights=weight), dtype=np.float64)
     else:
-        shortest_paths = np.array(g.shortest_paths_dijkstra(), dtype=np.float64)
+        shortest_paths = np.array(g.distances(), dtype=np.float64)
 
     logger.debug("Computing straightness centrality...")
 
@@ -289,11 +287,9 @@ def graph_straightness(g: ig.Graph, weight: str = None):
     # All-pairs shortest paths as numpy array
     logger.debug("Computing shortest paths...")
     if weight and weight in g.es.attributes():
-        shortest_paths = np.array(
-            g.shortest_paths_dijkstra(weights=weight), dtype=np.float64
-        )
+        shortest_paths = np.array(g.distances(weights=weight), dtype=np.float64)
     else:
-        shortest_paths = np.array(g.shortest_paths_dijkstra(), dtype=np.float64)
+        shortest_paths = np.array(g.distances(), dtype=np.float64)
 
     logger.debug("Computing global straightness...")
 

@@ -10,19 +10,14 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Afghanistan"
+    PLACE = "Mongolia"
     MAX_DISTANCE = 100_000  # meters
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "afghanistan-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
-
-    # Distance calculation method
-    USE_ORS_FOR_STATIONS = (
-        False  # Set to True to use OpenRouteService, False to use road network
-    )
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
@@ -41,7 +36,7 @@ class Config:
 
     # Coordinate Reference System (CRS) configuration
     WGS84_EPSG = 4326  # Input CRS from OSM data
-    EPSG_CODE = 32642  # Target projected CRS for analysis (UTM Zone 32N for Germany)
+    EPSG_CODE = 32642  # Target projected CRS for analysis (UTM Zone 42N for Afghanistan)
 
     @classmethod
     def get_wgs84_crs(cls):
