@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 def get_graph_stats(G, base_convex_hull=None):
     logger.info("Computing comprehensive graph statistics...")
+    from config import Config
     stats = {}
 
     # Basic graph statistics
@@ -53,135 +54,189 @@ def get_graph_stats(G, base_convex_hull=None):
         )
 
     # Degree centrality
-    logger.debug("Computing degree centrality...")
-    degree_centrality = largest_cc.degree()
-    max_possible_degree = largest_cc.vcount() - 1
-    normalized_degree_centrality = (
-        [d / max_possible_degree for d in degree_centrality]
-        if max_possible_degree > 0
-        else [0] * largest_cc.vcount()
-    )
-    stats["avg_degree_centrality"] = {
-        "value": np.mean(normalized_degree_centrality),
-        "unit": "normalized ratio",
-    }
+    if Config.CALCULATE_DEGREE_CENTRALITY:
+        logger.debug("Computing degree centrality...")
+        degree_centrality = largest_cc.degree()
+        max_possible_degree = largest_cc.vcount() - 1
+        normalized_degree_centrality = (
+            [d / max_possible_degree for d in degree_centrality]
+            if max_possible_degree > 0
+            else [0] * largest_cc.vcount()
+        )
+        stats["avg_degree_centrality"] = {
+            "value": np.mean(normalized_degree_centrality),
+            "unit": "normalized ratio",
+        }
+    else:
+        logger.info("Skipping degree centrality calculation (disabled in config)")
+        stats["avg_degree_centrality"] = {
+            "value": "Calculation disabled",
+            "unit": "n/a",
+        }
 
     # Closeness centrality
-    logger.debug("Computing closeness centrality...")
-    try:
-        # Check if weight attribute exists, use it if available
-        weight_attr = "weight" if "weight" in G.es.attributes() else None
-        closeness_centrality = largest_cc.closeness(
-            weights=weight_attr, normalized=True
-        )
-        stats["avg_closeness_centrality"] = {
-            "value": np.mean(closeness_centrality),
-            "unit": "normalized ratio",
-        }
-    except Exception as e:
-        logger.warning(f"Failed to compute closeness centrality: {e}")
-        stats["avg_closeness_centrality"] = {
-            "value": "Could not compute",
-            "unit": "n/a",
-        }
-
-    # Betweenness centrality - compute regardless of size
-    logger.debug("Computing betweenness centrality...")
-    try:
-        # Check if weight attribute exists, use it if available
-        weight_attr = "weight" if "weight" in G.es.attributes() else None
-        betweenness_centrality = largest_cc.betweenness(weights=weight_attr)
-        # Normalize manually since igraph doesn't support normalized parameter consistently
-        n = largest_cc.vcount()
-        normalization_factor = 2.0 / ((n - 1) * (n - 2)) if n > 2 else 1.0
-        normalized_betweenness = [
-            b * normalization_factor for b in betweenness_centrality
-        ]
-
-        stats["avg_betweenness_centrality"] = {
-            "value": np.mean(normalized_betweenness),
-            "unit": "normalized ratio",
-        }
-    except Exception as e:
-        logger.warning(f"Failed to compute betweenness centrality: {e}")
-        stats["avg_betweenness_centrality"] = {
-            "value": "Could not compute",
-            "unit": "n/a",
-        }
-
-    # Eigenvector centrality (only for connected graphs)
-    if largest_cc.is_connected(mode="weak"):
-        logger.debug("Computing eigenvector centrality...")
+    if Config.CALCULATE_CLOSENESS_CENTRALITY:
+        logger.debug("Computing closeness centrality...")
         try:
             # Check if weight attribute exists, use it if available
             weight_attr = "weight" if "weight" in G.es.attributes() else None
-            eigenvector_centrality = largest_cc.eigenvector_centrality(
-                weights=weight_attr
+            closeness_centrality = largest_cc.closeness(
+                weights=weight_attr, normalized=True
             )
-            stats["avg_eigenvector_centrality"] = {
-                "value": np.mean(eigenvector_centrality),
+            stats["avg_closeness_centrality"] = {
+                "value": np.mean(closeness_centrality),
                 "unit": "normalized ratio",
             }
         except Exception as e:
-            logger.warning(f"Failed to compute eigenvector centrality: {e}")
-            stats["avg_eigenvector_centrality"] = {
+            logger.warning(f"Failed to compute closeness centrality: {e}")
+            stats["avg_closeness_centrality"] = {
                 "value": "Could not compute",
                 "unit": "n/a",
             }
     else:
-        logger.info("Skipping eigenvector centrality (largest component not connected)")
+        logger.info("Skipping closeness centrality calculation (disabled in config)")
+        stats["avg_closeness_centrality"] = {
+            "value": "Calculation disabled",
+            "unit": "n/a",
+        }
+
+    # Betweenness centrality - compute regardless of size
+    if Config.CALCULATE_BETWEENNESS_CENTRALITY:
+        logger.debug("Computing betweenness centrality...")
+        try:
+            # Check if weight attribute exists, use it if available
+            weight_attr = "weight" if "weight" in G.es.attributes() else None
+            betweenness_centrality = largest_cc.betweenness(weights=weight_attr)
+            # Normalize manually since igraph doesn't support normalized parameter consistently
+            n = largest_cc.vcount()
+            normalization_factor = 2.0 / ((n - 1) * (n - 2)) if n > 2 else 1.0
+            normalized_betweenness = [
+                b * normalization_factor for b in betweenness_centrality
+            ]
+
+            stats["avg_betweenness_centrality"] = {
+                "value": np.mean(normalized_betweenness),
+                "unit": "normalized ratio",
+            }
+        except Exception as e:
+            logger.warning(f"Failed to compute betweenness centrality: {e}")
+            stats["avg_betweenness_centrality"] = {
+                "value": "Could not compute",
+                "unit": "n/a",
+            }
+    else:
+        logger.info("Skipping betweenness centrality calculation (disabled in config)")
+        stats["avg_betweenness_centrality"] = {
+            "value": "Calculation disabled",
+            "unit": "n/a",
+        }
+
+    # Eigenvector centrality (only for connected graphs)
+    if Config.CALCULATE_EIGENVECTOR_CENTRALITY:
+        if largest_cc.is_connected(mode="weak"):
+            logger.debug("Computing eigenvector centrality...")
+            try:
+                # Check if weight attribute exists, use it if available
+                weight_attr = "weight" if "weight" in G.es.attributes() else None
+                eigenvector_centrality = largest_cc.eigenvector_centrality(
+                    weights=weight_attr
+                )
+                stats["avg_eigenvector_centrality"] = {
+                    "value": np.mean(eigenvector_centrality),
+                    "unit": "normalized ratio",
+                }
+            except Exception as e:
+                logger.warning(f"Failed to compute eigenvector centrality: {e}")
+                stats["avg_eigenvector_centrality"] = {
+                    "value": "Could not compute",
+                    "unit": "n/a",
+                }
+        else:
+            logger.info("Skipping eigenvector centrality (largest component not connected)")
+            stats["avg_eigenvector_centrality"] = {
+                "value": "Graph not connected",
+                "unit": "n/a",
+            }
+    else:
+        logger.info("Skipping eigenvector centrality calculation (disabled in config)")
         stats["avg_eigenvector_centrality"] = {
-            "value": "Graph not connected",
+            "value": "Calculation disabled",
             "unit": "n/a",
         }
 
     # Straightness centrality and global straightness - compute regardless of size
-    logger.debug("Computing straightness measures...")
-    try:
-        # Check if nodes have coordinate attributes
-        if "x" in largest_cc.vs.attributes() and "y" in largest_cc.vs.attributes():
-            # Check if weight attribute exists, use it if available
-            weight_attr = "weight" if "weight" in G.es.attributes() else None
-            straightness_values = straightness_centrality(
-                largest_cc, weight=weight_attr
-            )
-            stats["avg_straightness_centrality"] = {
-                "value": np.mean(straightness_values),
-                "unit": "ratio",
-            }
-            stats["max_straightness_centrality"] = {
-                "value": max(straightness_values),
-                "unit": "ratio",
-            }
-            stats["min_straightness_centrality"] = {
-                "value": min(straightness_values),
-                "unit": "ratio",
-            }
+    if Config.CALCULATE_STRAIGHTNESS_CENTRALITY or Config.CALCULATE_GLOBAL_STRAIGHTNESS:
+        logger.debug("Computing straightness measures...")
+        try:
+            # Check if nodes have coordinate attributes
+            if "x" in largest_cc.vs.attributes() and "y" in largest_cc.vs.attributes():
+                # Check if weight attribute exists, use it if available
+                weight_attr = "weight" if "weight" in G.es.attributes() else None
+                
+                if Config.CALCULATE_STRAIGHTNESS_CENTRALITY:
+                    straightness_values = straightness_centrality(
+                        largest_cc, weight=weight_attr
+                    )
+                    stats["avg_straightness_centrality"] = {
+                        "value": np.mean(straightness_values),
+                        "unit": "ratio",
+                    }
+                    stats["max_straightness_centrality"] = {
+                        "value": max(straightness_values),
+                        "unit": "ratio",
+                    }
+                    stats["min_straightness_centrality"] = {
+                        "value": min(straightness_values),
+                        "unit": "ratio",
+                    }
+                else:
+                    logger.info("Skipping straightness centrality calculation (disabled in config)")
+                    stats["avg_straightness_centrality"] = {
+                        "value": "Calculation disabled",
+                        "unit": "n/a",
+                    }
 
-            # Global straightness
-            global_straightness = graph_straightness(largest_cc, weight=weight_attr)
-            stats["global_straightness"] = {
-                "value": global_straightness,
-                "unit": "ratio",
-            }
+                # Global straightness
+                if Config.CALCULATE_GLOBAL_STRAIGHTNESS:
+                    global_straightness = graph_straightness(largest_cc, weight=weight_attr)
+                    stats["global_straightness"] = {
+                        "value": global_straightness,
+                        "unit": "ratio",
+                    }
+                else:
+                    logger.info("Skipping global straightness calculation (disabled in config)")
+                    stats["global_straightness"] = {
+                        "value": "Calculation disabled",
+                        "unit": "n/a",
+                    }
 
-        else:
-            logger.warning("No coordinate data found for straightness centrality")
+            else:
+                logger.warning("No coordinate data found for straightness centrality")
+                stats["avg_straightness_centrality"] = {
+                    "value": "No coordinate data",
+                    "unit": "n/a",
+                }
+                stats["global_straightness"] = {
+                    "value": "No coordinate data",
+                    "unit": "n/a",
+                }
+        except Exception as e:
+            logger.warning(f"Failed to compute straightness measures: {e}")
             stats["avg_straightness_centrality"] = {
-                "value": "No coordinate data",
+                "value": "Could not compute",
                 "unit": "n/a",
             }
-            stats["global_straightness"] = {
-                "value": "No coordinate data",
-                "unit": "n/a",
-            }
-    except Exception as e:
-        logger.warning(f"Failed to compute straightness measures: {e}")
+            stats["global_straightness"] = {"value": "Could not compute", "unit": "n/a"}
+    else:
+        logger.info("Skipping all straightness calculations (disabled in config)")
         stats["avg_straightness_centrality"] = {
-            "value": "Could not compute",
+            "value": "Calculation disabled",
             "unit": "n/a",
         }
-        stats["global_straightness"] = {"value": "Could not compute", "unit": "n/a"}
+        stats["global_straightness"] = {
+            "value": "Calculation disabled",
+            "unit": "n/a",
+        }
 
     # Farness centrality (if available)
     if "farness" in G.vs.attributes():

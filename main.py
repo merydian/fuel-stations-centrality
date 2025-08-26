@@ -60,6 +60,14 @@ def main():
     logger.info(f"  • Max stations limit: {Config.MAX_STATIONS if Config.MAX_STATIONS else 'No limit'}")
     logger.info(f"  • Log level: {Config.LOG_LEVEL}")
     logger.info("")
+    logger.info("Centrality Calculations:")
+    logger.info(f"  • Degree centrality: {'Enabled' if Config.CALCULATE_DEGREE_CENTRALITY else 'Disabled'}")
+    logger.info(f"  • Closeness centrality: {'Enabled' if Config.CALCULATE_CLOSENESS_CENTRALITY else 'Disabled'}")
+    logger.info(f"  • Betweenness centrality: {'Enabled' if Config.CALCULATE_BETWEENNESS_CENTRALITY else 'Disabled'}")
+    logger.info(f"  • Eigenvector centrality: {'Enabled' if Config.CALCULATE_EIGENVECTOR_CENTRALITY else 'Disabled'}")
+    logger.info(f"  • Straightness centrality: {'Enabled' if Config.CALCULATE_STRAIGHTNESS_CENTRALITY else 'Disabled'}")
+    logger.info(f"  • Global straightness: {'Enabled' if Config.CALCULATE_GLOBAL_STRAIGHTNESS else 'Disabled'}")
+    logger.info("")
 
     try:
         # Step 0: Download road network

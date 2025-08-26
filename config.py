@@ -45,6 +45,14 @@ class Config:
     # Logging configuration
     LOG_LEVEL = "DEBUG"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+    # Centrality calculation control
+    CALCULATE_DEGREE_CENTRALITY = True
+    CALCULATE_CLOSENESS_CENTRALITY = True
+    CALCULATE_BETWEENNESS_CENTRALITY = True
+    CALCULATE_EIGENVECTOR_CENTRALITY = True
+    CALCULATE_STRAIGHTNESS_CENTRALITY = True
+    CALCULATE_GLOBAL_STRAIGHTNESS = True
+
     @classmethod
     def get_wgs84_crs(cls):
         """Get WGS84 CRS string."""
