@@ -540,7 +540,8 @@ def remove_edges_far_from_stations_graph(
     edges_to_remove = []
     for i, edge in enumerate(G.es):
         u, v = edge.source, edge.target
-        if min_distances[u] > max_distance and min_distances[v] > max_distance:
+        # Remove edge if EITHER endpoint is farther than max_distance from any station
+        if min_distances[u] > max_distance or min_distances[v] > max_distance:
             edges_to_remove.append(i)
 
     edges_removed_count = len(edges_to_remove)
