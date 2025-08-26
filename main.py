@@ -55,6 +55,7 @@ def main():
     logger.info(f"  • Stations to remove: {Config.N_REMOVE}")
     logger.info(f"  • k-NN parameter: {Config.K_NN}")
     logger.info(f"  • Removal criteria: {Config.REMOVAL_KIND}")
+    logger.info(f"  • Station clustering radius: {Config.CLUSTER_RADIUS}m")
     logger.info("")
 
     try:
@@ -77,6 +78,24 @@ def main():
             "1", "Extracting fuel stations from road network area"
         )
         stations = get_gas_stations_from_graph(G_road)
+        
+        # Log clustering information if available
+        if 'cluster_id' in stations.columns:
+            total_original = stations['stations_in_cluster'].sum()
+            clustered_stations = len(stations[stations['stations_in_cluster'] > 1])
+            reduction_count = total_original - len(stations)
+            reduction_percent = (reduction_count / total_original) * 100 if total_original > 0 else 0
+            
+            logger.info(f"✓ Station clustering applied:")
+            logger.info(f"  • Original stations extracted: {total_original:,}")
+            logger.info(f"  • Final clustered stations: {len(stations):,}")
+            logger.info(f"  • Stations combined: {reduction_count:,}")
+            logger.info(f"  • Multi-station clusters: {clustered_stations}")
+            logger.info(f"  • Clustering reduction: {reduction_percent:.1f}%")
+            logger.info(f"  • Clustering radius: {Config.CLUSTER_RADIUS}m")
+        else:
+            logger.info(f"✓ No clustering applied: {len(stations):,} stations")
+            
         log_step_end(step_start, "1", "Fuel station extraction")
 
         # Step 1.5: Save all gas stations to GeoPackage
@@ -84,9 +103,16 @@ def main():
         save_stations_to_geopackage(
             stations, out_file=f"all_gas_stations_{Config.get_road_filename()}.gpkg"
         )
-        logger.info(
-            f"✓ All {len(stations)} gas stations saved to all_gas_stations_{Config.get_road_filename()}.gpkg"
-        )
+        
+        # Update log message to reflect clustering
+        if 'cluster_id' in stations.columns:
+            logger.info(
+                f"✓ All {len(stations)} clustered gas stations (representing {stations['stations_in_cluster'].sum()} original stations) saved to all_gas_stations_{Config.get_road_filename()}.gpkg"
+            )
+        else:
+            logger.info(
+                f"✓ All {len(stations)} gas stations saved to all_gas_stations_{Config.get_road_filename()}.gpkg"
+            )
         log_step_end(step_start, "1.5", "Gas stations save")
 
         # Step 2: Map stations to road network (needed for both methods)
@@ -135,9 +161,21 @@ def main():
         logger.info(
             "  Cleaning up edges far from gas stations from baseline road network..."
         )
-        G_road_ig = remove_edges_far_from_stations_graph(
+        G_road_ig, edges_removed = remove_edges_far_from_stations_graph(
             G_road_ig, stations, Config.MAX_DISTANCE, station_to_node_mapping
         )
+        
+        # Check if any edges were removed - exit if none
+        if edges_removed == 0:
+            logger.error("❌ ANALYSIS TERMINATED: No edges were removed from the road network.")
+            logger.error("This indicates that all road network edges are within the specified distance")
+            logger.error(f"of gas stations ({Config.MAX_DISTANCE:,}m). The analysis would not be meaningful.")
+            logger.error("")
+            logger.error("Possible solutions:")
+            logger.error(f"  • Reduce MAX_DISTANCE (currently {Config.MAX_DISTANCE:,}m) in config.py")
+            logger.error("  • Use a different region with sparser gas station coverage")
+            logger.error("  • Increase the road network size to include more remote areas")
+            sys.exit(1)
 
         # No base convex hull needed
         base_convex_hull = None
@@ -200,7 +238,7 @@ def main():
         )
         # Create filtered stations GeoDataFrame (excluding removed stations)
         remaining_stations = stations[~stations.index.isin(stations_to_remove)]
-        G_road_ig = remove_edges_far_from_stations_graph(
+        G_road_ig, _ = remove_edges_far_from_stations_graph(
             G_road_ig, remaining_stations, Config.MAX_DISTANCE
         )
 
@@ -236,7 +274,7 @@ def main():
         remaining_stations_random = stations[
             ~stations.index.isin(random_stations_to_remove)
         ]
-        G_road_ig = remove_edges_far_from_stations_graph(
+        G_road_ig, _ = remove_edges_far_from_stations_graph(
             G_road_ig, remaining_stations_random, Config.MAX_DISTANCE
         )
 
@@ -476,9 +514,17 @@ def main():
 
         logger.info("")
         logger.info("📁 Output files saved:")
-        logger.info(
-            f"   • all_gas_stations_{pbf_stem}.gpkg - All extracted gas stations from OpenStreetMap"
-        )
+        
+        # Update file descriptions to mention clustering
+        if 'cluster_id' in stations.columns:
+            logger.info(
+                f"   • all_gas_stations_{pbf_stem}.gpkg - All clustered gas stations from OpenStreetMap (within {Config.CLUSTER_RADIUS}m radius)"
+            )
+        else:
+            logger.info(
+                f"   • all_gas_stations_{pbf_stem}.gpkg - All extracted gas stations from OpenStreetMap"
+            )
+            
         logger.info(
             f"   • road_network_baseline_{pbf_stem}.gpkg - Complete road network with centrality measures"
         )
@@ -506,5 +552,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
     main()

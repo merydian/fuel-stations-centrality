@@ -12,6 +12,7 @@ import time
 import igraph as ig
 import numpy as np
 from numba import njit, prange
+from sklearn.cluster import DBSCAN
 
 logger = logging.getLogger(__name__)
 
@@ -269,17 +270,117 @@ def save_voronoi_to_geopackage(G, out_file="voronoi.gpkg", suffix=None):
         raise
 
 
+def cluster_nearby_stations(stations_gdf, radius_meters=500):
+    """
+    Cluster stations within specified radius and combine them into single representative stations.
+    
+    Args:
+        stations_gdf: GeoDataFrame with fuel station data (in projected CRS)
+        radius_meters: Maximum distance between stations to be clustered (default: 500m)
+        
+    Returns:
+        GeoDataFrame with clustered stations, where nearby stations are combined
+    """
+    logger.info(f"Clustering stations within {radius_meters}m radius...")
+    
+    if stations_gdf.empty:
+        logger.warning("Empty stations GeoDataFrame provided")
+        return stations_gdf
+    
+    # Ensure stations are in projected CRS for accurate distance calculation
+    stations_gdf = Config.ensure_target_crs(stations_gdf, "stations for clustering")
+    
+    # Extract coordinates for clustering
+    coords = np.array([[geom.x, geom.y] for geom in stations_gdf.geometry])
+    
+    # Use DBSCAN clustering with specified radius
+    # eps = radius in projected units (meters)
+    # min_samples = 1 means any station can form a cluster
+    clustering = DBSCAN(eps=radius_meters, min_samples=1, metric='euclidean')
+    cluster_labels = clustering.fit_predict(coords)
+    
+    logger.info(f"Found {len(set(cluster_labels))} clusters from {len(stations_gdf)} original stations")
+    
+    # Create clustered stations
+    clustered_stations = []
+    cluster_info = []
+    
+    for cluster_id in set(cluster_labels):
+        # Get all stations in this cluster
+        cluster_mask = cluster_labels == cluster_id
+        cluster_stations = stations_gdf[cluster_mask]
+        
+        if len(cluster_stations) == 1:
+            # Single station - keep as is
+            station = cluster_stations.iloc[0].copy()
+            station['cluster_id'] = cluster_id
+            station['stations_in_cluster'] = 1
+            station['original_indices'] = [cluster_stations.index[0]]
+            clustered_stations.append(station)
+        else:
+            # Multiple stations - combine them
+            # Use centroid of all station locations as representative location
+            cluster_geoms = cluster_stations.geometry
+            centroid_x = cluster_geoms.x.mean()
+            centroid_y = cluster_geoms.y.mean()
+            representative_point = Point(centroid_x, centroid_y)
+            
+            # Create representative station with combined attributes
+            representative_station = cluster_stations.iloc[0].copy()
+            representative_station.geometry = representative_point
+            representative_station['cluster_id'] = cluster_id
+            representative_station['stations_in_cluster'] = len(cluster_stations)
+            representative_station['original_indices'] = list(cluster_stations.index)
+            
+            # Combine names if available
+            if 'name' in cluster_stations.columns:
+                names = cluster_stations['name'].dropna().unique()
+                representative_station['name'] = ' | '.join(names) if len(names) > 0 else None
+            
+            clustered_stations.append(representative_station)
+            
+            cluster_info.append({
+                'cluster_id': cluster_id,
+                'num_stations': len(cluster_stations),
+                'original_indices': list(cluster_stations.index),
+                'centroid': (centroid_x, centroid_y)
+            })
+    
+    # Create new GeoDataFrame with clustered stations
+    clustered_gdf = gpd.GeoDataFrame(clustered_stations, crs=stations_gdf.crs)
+    clustered_gdf = clustered_gdf.reset_index(drop=True)
+    
+    # Log clustering statistics
+    original_count = len(stations_gdf)
+    clustered_count = len(clustered_gdf)
+    stations_combined = original_count - clustered_count
+    
+    logger.info(f"Station clustering completed:")
+    logger.info(f"  • Original stations: {original_count}")
+    logger.info(f"  • Clustered stations: {clustered_count}")
+    logger.info(f"  • Stations combined: {stations_combined}")
+    logger.info(f"  • Reduction: {100 * stations_combined / original_count:.1f}%")
+    
+    if cluster_info:
+        multi_station_clusters = [c for c in cluster_info if c['num_stations'] > 1]
+        logger.info(f"  • Multi-station clusters: {len(multi_station_clusters)}")
+        for cluster in multi_station_clusters[:5]:  # Log first 5 clusters
+            logger.debug(f"    Cluster {cluster['cluster_id']}: {cluster['num_stations']} stations combined")
+    
+    return clustered_gdf
+
+
 def get_gas_stations_from_graph(G, area_polygon=None):
     """
     Get gas stations within the area of a NetworkX graph from OSMnx.
-    Uses unified projection logic from Config.
+    Uses unified projection logic from Config and clusters nearby stations.
 
     Args:
         G: NetworkX graph from osmnx (should be in projected CRS)
         area_polygon: optional Shapely polygon to restrict the search
 
     Returns:
-        GeoDataFrame of gas stations with Point geometries in target CRS
+        GeoDataFrame of gas stations with Point geometries in target CRS (clustered)
     """
     logger.info("Extracting gas stations from OSM using unified projection logic")
 
@@ -313,6 +414,10 @@ def get_gas_stations_from_graph(G, area_polygon=None):
                 gas_points, crs=Config.get_target_crs()
             ).reset_index(drop=True)
             logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations in CRS {Config.get_target_crs()}")
+            
+            # Cluster nearby stations within 500m radius
+            gas_stations_gdf = cluster_nearby_stations(gas_stations_gdf, radius_meters=500)
+            logger.info(f"Final clustered stations: {len(gas_stations_gdf)}")
         else:
             # Create empty GeoDataFrame with expected structure
             gas_stations_gdf = gpd.GeoDataFrame(
@@ -342,7 +447,7 @@ def remove_edges_far_from_stations_graph(
         station_to_node_mapping: Optional mapping {station_idx -> graph_node_idx}
 
     Returns:
-        Modified graph with distant edges removed
+        tuple: (Modified graph with distant edges removed, edges_removed_count)
     """
     import numpy as np
 
@@ -352,11 +457,11 @@ def remove_edges_far_from_stations_graph(
 
     if G.vcount() == 0:
         logger.warning("Empty graph provided")
-        return G
+        return G, 0
 
     if stations_gdf.empty:
         logger.warning("No stations provided - keeping all edges")
-        return G
+        return G, 0
 
     # --- Step 1: Ensure consistent CRS and determine station nodes ---
     if station_to_node_mapping is not None:
@@ -384,7 +489,7 @@ def remove_edges_far_from_stations_graph(
 
     if not station_nodes:
         logger.warning("No valid station-to-node mapping found - keeping all edges")
-        return G
+        return G, 0
 
     logger.info(f"Using {len(station_nodes)} valid stations mapped to graph nodes")
 
@@ -413,7 +518,7 @@ def remove_edges_far_from_stations_graph(
         
     except Exception as e:
         logger.error(f"Failed to compute shortest paths using igraph: {e}")
-        return G
+        return G, 0
 
     # --- Step 3: Remove edges with both endpoints farther than max_distance ---
     edges_to_remove = []
@@ -422,21 +527,22 @@ def remove_edges_far_from_stations_graph(
         if min_distances[u] > max_distance and min_distances[v] > max_distance:
             edges_to_remove.append(i)
 
+    edges_removed_count = len(edges_to_remove)
+    
     logger.info(
-        f"Found {len(edges_to_remove)} edges beyond {max_distance:,}m network distance from stations"
+        f"Found {edges_removed_count} edges beyond {max_distance:,}m network distance from stations"
     )
 
     if edges_to_remove:
         G.delete_edges(sorted(edges_to_remove, reverse=True))
         logger.info(
-            f"Removed {len(edges_to_remove)} distant edges. "
+            f"Removed {edges_removed_count} distant edges. "
             f"Graph now has {G.ecount()} edges"
         )
     else:
         logger.info("No edges to remove")
 
-    return G
-
+    return G, edges_removed_count
 
 def remove_long_edges(G, max_distance, weight_attr="length"):
     """
@@ -649,7 +755,7 @@ def save_stations_to_geopackage(
     stations_gdf, out_file="all_gas_stations.gpkg", suffix=None
 ):
     """
-    Save all gas stations to GeoPackage.
+    Save all gas stations to GeoPackage, including clustering metadata.
 
     Args:
         stations_gdf: GeoDataFrame with gas station data
@@ -676,6 +782,11 @@ def save_stations_to_geopackage(
         # Add metadata
         stations_to_save["station_index"] = stations_to_save.index
         stations_to_save["extraction_source"] = "OpenStreetMap"
+        
+        # Add clustering information if available
+        if 'cluster_id' in stations_to_save.columns:
+            stations_to_save["is_clustered"] = stations_to_save["stations_in_cluster"] > 1
+            logger.debug(f"Added clustering metadata: {sum(stations_to_save['is_clustered'])} clustered stations")
 
         # Ensure geometry is valid
         stations_to_save = stations_to_save[~stations_to_save.geometry.is_empty]
@@ -689,6 +800,10 @@ def save_stations_to_geopackage(
         logger.info(f"Successfully saved gas stations to {output_path}")
         logger.debug(f"  Number of stations: {len(stations_to_save)}")
         logger.debug(f"  CRS: {stations_to_save.crs}")
+        
+        if 'cluster_id' in stations_to_save.columns:
+            clustered_count = sum(stations_to_save["is_clustered"])
+            logger.debug(f"  Clustered stations: {clustered_count}")
 
     except Exception as e:
         logger.error(f"Failed to save gas stations to {output_path}: {e}")

@@ -11,13 +11,16 @@ class Config:
 
     # Analysis parameters
     PLACE = "Mongolia"
-    MAX_DISTANCE = 100_000  # meters
+    MAX_DISTANCE = 50_000  # meters
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
+
+    # Station clustering parameters
+    CLUSTER_RADIUS = 5000  # meters - stations within this radius are combined
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
@@ -36,7 +39,7 @@ class Config:
 
     # Coordinate Reference System (CRS) configuration
     WGS84_EPSG = 4326  # Input CRS from OSM data
-    EPSG_CODE = 32642  # Target projected CRS for analysis (UTM Zone 42N for Afghanistan)
+    EPSG_CODE = 32648  # Target projected CRS for analysis (UTM Zone 42N for Afghanistan)
 
     @classmethod
     def get_wgs84_crs(cls):
