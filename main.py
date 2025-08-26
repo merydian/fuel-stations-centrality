@@ -169,39 +169,50 @@ def main():
         )
         G_road_ig = convert_networkx_to_igraph(G_road)
 
-        # Simplify the graph before centrality calculations
-        logger.info("  Simplifying graph for centrality analysis...")
+        # Simplify and contract the graph before centrality calculations
+        logger.info("  Simplifying and contracting graph for centrality analysis...")
         original_nodes = G_road_ig.vcount()
         original_edges = G_road_ig.ecount()
+        
+        # First simplify to remove multi-edges and self-loops
         G_road_ig.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
+        
+        # Contract vertices with degree 2 (chain nodes)
+        degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
+        if degree_2_vertices:
+            G_road_ig.contract_vertices(degree_2_vertices, combine_attrs="mean")
+            G_road_ig.simplify()  # Clean up after contraction
+        
+        # Contract vertices that are very close to each other (< 10 meters)
+        close_threshold = 10.0  # meters
+        vertices_to_contract = []
+        
+        for v in G_road_ig.vs:
+            if hasattr(v, 'x') and hasattr(v, 'y'):
+                for neighbor in G_road_ig.neighbors(v.index):
+                    neighbor_v = G_road_ig.vs[neighbor]
+                    if hasattr(neighbor_v, 'x') and hasattr(neighbor_v, 'y'):
+                        # Calculate Euclidean distance
+                        dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
+                        if dist < close_threshold and v.index < neighbor:  # Avoid duplicates
+                            vertices_to_contract.append([v.index, neighbor])
+        
+        # Contract close vertices
+        for vertex_pair in vertices_to_contract:
+            try:
+                G_road_ig.contract_vertices(vertex_pair, combine_attrs="mean")
+            except:
+                pass  # Skip if vertices were already contracted
+        
+        if vertices_to_contract:
+            G_road_ig.simplify()  # Clean up after contraction
+        
         simplified_nodes = G_road_ig.vcount()
         simplified_edges = G_road_ig.ecount()
         
-        logger.info(f"  Graph simplified: {original_nodes:,} → {simplified_nodes:,} nodes, "
+        logger.info(f"  Graph simplified and contracted: {original_nodes:,} → {simplified_nodes:,} nodes, "
                    f"{original_edges:,} → {simplified_edges:,} edges")
-
-        # Clean up edges far from stations before baseline analysis
-        logger.info(
-            "  Cleaning up edges far from gas stations from baseline road network..."
-        )
-        G_road_ig, edges_removed = remove_edges_far_from_stations_graph(
-            G_road_ig, stations, Config.MAX_DISTANCE, station_to_node_mapping
-        )
-        
-        # Check if any edges were removed - exit if none
-        if edges_removed == 0:
-            logger.error("❌ ANALYSIS TERMINATED: No edges were removed from the road network.")
-            logger.error("This indicates that all road network edges are within the specified distance")
-            logger.error(f"of gas stations ({Config.MAX_DISTANCE:,}m). The analysis would not be meaningful.")
-            logger.error("")
-            logger.error("Possible solutions:")
-            logger.error(f"  • Reduce MAX_DISTANCE (currently {Config.MAX_DISTANCE:,}m) in config.py")
-            logger.error("  • Use a different region with sparser gas station coverage")
-            logger.error("  • Increase the road network size to include more remote areas")
-            sys.exit(1)
-
-        # No base convex hull needed
-        base_convex_hull = None
+        logger.info(f"  Contracted {len(degree_2_vertices)} degree-2 vertices and {len(vertices_to_contract)} close vertex pairs")
         log_step_end(step_start, "5", "Road network conversion")
 
         # Step 6: Get baseline statistics on full road network
@@ -255,10 +266,35 @@ def main():
         # G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_ig = convert_networkx_to_igraph(G_road)
         
-        # Simplify the graph before analysis
-        logger.info("  Simplifying graph for smart-filtered analysis...")
+        # Simplify and contract the graph before analysis
+        logger.info("  Simplifying and contracting graph for smart-filtered analysis...")
         G_road_ig.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
-
+        
+        # Contract vertices with degree 2
+        degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
+        if degree_2_vertices:
+            G_road_ig.contract_vertices(degree_2_vertices, combine_attrs="mean")
+            G_road_ig.simplify()
+        
+        # Contract vertices that are very close to each other
+        close_threshold = 10.0  # meters
+        vertices_to_contract = []
+        
+        for v in G_road_ig.vs:
+            if hasattr(v, 'x') and hasattr(v, 'y'):
+                for neighbor in G_road_ig.neighbors(v.index):
+                    neighbor_v = G_road_ig.vs[neighbor]
+                    if hasattr(neighbor_v, 'x') and hasattr(neighbor_v, 'y'):
+                        dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
+                        if dist < close_threshold and v.index < neighbor:
+                            vertices_to_contract.append([v.index, neighbor])
+        
+        for vertex_pair in vertices_to_contract:
+            try:
+                G_road_ig.contract_vertices(vertex_pair, combine_attrs="mean")
+            except:
+                pass
+        
         # Clean up edges far from remaining stations after node removal
         logger.info(
             "  Cleaning up edges far from remaining stations after station removal..."
@@ -295,21 +331,36 @@ def main():
 
         # Convert and simplify graph for random comparison
         G_road_ig_random = convert_networkx_to_igraph(G_road)
-        logger.info("  Simplifying graph for random-filtered analysis...")
+        logger.info("  Simplifying and contracting graph for random-filtered analysis...")
         G_road_ig_random.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
-
-        # Clean up edges far from remaining stations after node removal
-        logger.info(
-            "  Cleaning up edges far from remaining stations after station removal..."
-        )
-        # Create filtered stations GeoDataFrame (excluding removed stations)
-        remaining_stations_random = stations[
-            ~stations.index.isin(random_stations_to_remove)
-        ]
-        G_road_ig_random, _ = remove_edges_far_from_stations_graph(
-            G_road_ig_random, remaining_stations_random, Config.MAX_DISTANCE
-        )
-
+        
+        # Contract vertices with degree 2
+        degree_2_vertices_random = [v.index for v in G_road_ig_random.vs if v.degree() == 2]
+        if degree_2_vertices_random:
+            G_road_ig_random.contract_vertices(degree_2_vertices_random, combine_attrs="mean")
+            G_road_ig_random.simplify()
+        
+        # Contract vertices that are very close to each other
+        close_threshold = 10.0  # meters
+        vertices_to_contract_random = []
+        
+        for v in G_road_ig_random.vs:
+            if hasattr(v, 'x') and hasattr(v, 'y'):
+                for neighbor in G_road_ig_random.neighbors(v.index):
+                    neighbor_v = G_road_ig_random.vs[neighbor]
+                    if hasattr(neighbor_v, 'x') and hasattr(neighbor_v, 'y'):
+                        dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
+                        if dist < close_threshold and v.index < neighbor:
+                            vertices_to_contract_random.append([v.index, neighbor])
+        
+        for vertex_pair in vertices_to_contract_random:
+            try:
+                G_road_ig_random.contract_vertices(vertex_pair, combine_attrs="mean")
+            except:
+                pass
+        
+        if vertices_to_contract_random:
+            G_road_ig_random.simplify()
         logger.info(
             f"✓ Random-filtered road network: {G_road_ig_random.vcount()} nodes, {G_road_ig_random.ecount()} edges"
         )
