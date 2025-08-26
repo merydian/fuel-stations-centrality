@@ -169,6 +169,17 @@ def main():
         )
         G_road_ig = convert_networkx_to_igraph(G_road)
 
+        # Simplify the graph before centrality calculations
+        logger.info("  Simplifying graph for centrality analysis...")
+        original_nodes = G_road_ig.vcount()
+        original_edges = G_road_ig.ecount()
+        G_road_ig.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
+        simplified_nodes = G_road_ig.vcount()
+        simplified_edges = G_road_ig.ecount()
+        
+        logger.info(f"  Graph simplified: {original_nodes:,} → {simplified_nodes:,} nodes, "
+                   f"{original_edges:,} → {simplified_edges:,} edges")
+
         # Clean up edges far from stations before baseline analysis
         logger.info(
             "  Cleaning up edges far from gas stations from baseline road network..."
@@ -243,6 +254,10 @@ def main():
         )
         # G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_ig = convert_networkx_to_igraph(G_road)
+        
+        # Simplify the graph before analysis
+        logger.info("  Simplifying graph for smart-filtered analysis...")
+        G_road_ig.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
 
         # Clean up edges far from remaining stations after node removal
         logger.info(
@@ -278,6 +293,11 @@ def main():
             knn_dist=knn_dist,
         )
 
+        # Convert and simplify graph for random comparison
+        G_road_ig_random = convert_networkx_to_igraph(G_road)
+        logger.info("  Simplifying graph for random-filtered analysis...")
+        G_road_ig_random.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
+
         # Clean up edges far from remaining stations after node removal
         logger.info(
             "  Cleaning up edges far from remaining stations after station removal..."
@@ -286,12 +306,12 @@ def main():
         remaining_stations_random = stations[
             ~stations.index.isin(random_stations_to_remove)
         ]
-        G_road_ig, _ = remove_edges_far_from_stations_graph(
-            G_road_ig, remaining_stations_random, Config.MAX_DISTANCE
+        G_road_ig_random, _ = remove_edges_far_from_stations_graph(
+            G_road_ig_random, remaining_stations_random, Config.MAX_DISTANCE
         )
 
         logger.info(
-            f"✓ Random-filtered road network: {G_road_ig.vcount()} nodes, {G_road_ig.ecount()} edges"
+            f"✓ Random-filtered road network: {G_road_ig_random.vcount()} nodes, {G_road_ig_random.ecount()} edges"
         )
         log_step_end(step_start, "10", "Random station removal")
 
@@ -304,7 +324,7 @@ def main():
         smart_stats = get_graph_stats(G_road_ig, base_convex_hull=base_convex_hull)
 
         logger.info("  Computing statistics for random-filtered road network...")
-        random_stats = get_graph_stats(G_road_ig, base_convex_hull=base_convex_hull)
+        random_stats = get_graph_stats(G_road_ig_random, base_convex_hull=base_convex_hull)
 
         logger.info("✓ Centrality measures computed for both filtered networks")
         log_step_end(step_start, "11", "Filtered network analysis")
@@ -316,7 +336,7 @@ def main():
             out_file=f"road_network_smart_filtered_{pbf_stem}.gpkg",
         )
         save_graph_to_geopackage(
-            G_road_ig,
+            G_road_ig_random,
             out_file=f"road_network_random_filtered_{pbf_stem}.gpkg",
         )
         logger.info("✓ Filtered road networks saved")
