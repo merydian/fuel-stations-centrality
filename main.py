@@ -193,9 +193,15 @@ def main():
                     # Map this vertex to its first neighbor
                     mapping[v_idx] = neighbors[0]
             
-            # Apply contraction using the mapping
+            # Apply contraction using the mapping with proper attribute handling
             try:
-                G_road_ig.contract_vertices(mapping, combine_attrs="mean")
+                # Define how to combine attributes - only use mean for numeric attributes
+                combine_attrs = {
+                    "x": "mean",  # Numeric coordinates
+                    "y": "mean",  # Numeric coordinates
+                    "name": "first"  # Take first value for string attributes
+                }
+                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
                 G_road_ig.simplify()  # Clean up after contraction
                 logger.debug(f"Successfully contracted {len(degree_2_vertices)} degree-2 vertices")
             except Exception as e:
@@ -229,7 +235,13 @@ def main():
                     mapping[max(v1, v2)] = min(v1, v2)
             
             try:
-                G_road_ig.contract_vertices(mapping, combine_attrs="mean")
+                # Define how to combine attributes
+                combine_attrs = {
+                    "x": "mean",  # Numeric coordinates
+                    "y": "mean",  # Numeric coordinates
+                    "name": "first"  # Take first value for string attributes
+                }
+                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
                 G_road_ig.simplify()  # Clean up after contraction
                 logger.debug(f"Successfully contracted {len(vertices_to_contract)} close vertex pairs")
             except Exception as e:
@@ -308,7 +320,8 @@ def main():
                     mapping[v_idx] = neighbors[0]
             
             try:
-                G_road_ig.contract_vertices(mapping, combine_attrs="mean")
+                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
+                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
                 G_road_ig.simplify()
             except Exception as e:
                 logger.debug(f"Failed to contract degree-2 vertices: {e}")
@@ -334,7 +347,8 @@ def main():
                     mapping[max(v1, v2)] = min(v1, v2)
             
             try:
-                G_road_ig.contract_vertices(mapping, combine_attrs="mean")
+                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
+                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
                 G_road_ig.simplify()
             except Exception as e:
                 logger.debug(f"Failed to contract close vertices: {e}")
@@ -397,7 +411,8 @@ def main():
                     mapping[v_idx] = neighbors[0]
             
             try:
-                G_road_ig_random.contract_vertices(mapping, combine_attrs="mean")
+                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
+                G_road_ig_random.contract_vertices(mapping, combine_attrs=combine_attrs)
                 G_road_ig_random.simplify()
             except Exception as e:
                 logger.debug(f"Failed to contract degree-2 vertices: {e}")
@@ -423,7 +438,8 @@ def main():
                     mapping[max(v1, v2)] = min(v1, v2)
             
             try:
-                G_road_ig_random.contract_vertices(mapping, combine_attrs="mean")
+                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
+                G_road_ig_random.contract_vertices(mapping, combine_attrs=combine_attrs)
                 G_road_ig_random.simplify()
             except Exception as e:
                 logger.debug(f"Failed to contract close vertices: {e}")

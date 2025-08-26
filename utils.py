@@ -472,9 +472,13 @@ def remove_edges_far_from_stations_graph(
         # Create mapping from OSM node ID to igraph index
         osm_to_igraph = {}
         for i in range(G.vcount()):
-            if "name" in G.vs[i].attributes():
-                osm_id = int(G.vs[i]["name"])  # OSM node ID stored in 'name' attribute
-                osm_to_igraph[osm_id] = i
+            if "name" in G.vs[i].attributes() and G.vs[i]["name"] is not None:
+                try:
+                    osm_id = int(G.vs[i]["name"])  # OSM node ID stored in 'name' attribute
+                    osm_to_igraph[osm_id] = i
+                except (ValueError, TypeError):
+                    # Skip nodes with invalid name attributes
+                    continue
         
         logger.debug(f"Created OSM to igraph mapping for {len(osm_to_igraph)} nodes")
         
