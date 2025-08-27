@@ -11,7 +11,7 @@ class Config:
 
     # Analysis parameters
     PLACE = "Mongolia"
-    MAX_DISTANCE = 5_000  # meters
+    MAX_DISTANCE = 50_000  # meters
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
