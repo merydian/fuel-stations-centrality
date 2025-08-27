@@ -313,10 +313,7 @@ def main():
         )
         # G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_ig = convert_networkx_to_igraph(G_road)
-        
-        # Simplify and contract the graph before analysis
-        logger.info("  Simplifying and contracting graph for smart-filtered analysis...")
-        G_road_ig.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
+        print(G_road_ig.es.attributes())
         
         # Contract vertices with degree 2 - recalculate after simplification
         degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
@@ -326,13 +323,25 @@ def main():
                 neighbors = G_road_ig.neighbors(v_idx)
                 if len(neighbors) >= 1:
                     mapping[v_idx] = neighbors[0]
-            
+            print(G_road_ig.es.attributes())
+
             try:
                 combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
                 G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig.simplify()
+                print(G_road_ig.es.attributes())
+                G_road_ig = G_road_ig.simplify(
+                                    combine_edges={
+                                        "weight": "sum",   # sum weights of parallel edges
+                                        "length": "sum",   # sum lengths of parallel edges
+                                        # you can add other attributes here
+                                    }
+                                )
+                print(G_road_ig.es.attributes())
+
             except Exception as e:
                 logger.debug(f"Failed to contract degree-2 vertices: {e}")
+        
+        print(G_road_ig.es.attributes())
         
         # Contract vertices that are very close to each other - recalculate again
         close_threshold = 10.0  # meters
@@ -357,7 +366,13 @@ def main():
             try:
                 combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
                 G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig.simplify()
+                G_road_ig = G_road_ig.simplify(
+                                    combine_edges={
+                                        "weight": "sum",   # sum weights of parallel edges
+                                        "length": "sum",   # sum lengths of parallel edges
+                                        # you can add other attributes here
+                                    }
+                                )
             except Exception as e:
                 logger.debug(f"Failed to contract close vertices: {e}")
         
@@ -365,6 +380,7 @@ def main():
         logger.info(
             "  Cleaning up edges far from gas stations from baseline road network..."
         )
+        print(G_road_ig.es.attributes())
         G_road_ig, edges_removed = remove_edges_far_from_stations_graph(
             G_road_ig, stations, Config.MAX_DISTANCE, station_to_node_mapping
         )
