@@ -313,7 +313,6 @@ def main():
         )
         # G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_ig = convert_networkx_to_igraph(G_road)
-        print(G_road_ig.es.attributes())
         
         # Contract vertices with degree 2 - recalculate after simplification
         degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
@@ -323,12 +322,10 @@ def main():
                 neighbors = G_road_ig.neighbors(v_idx)
                 if len(neighbors) >= 1:
                     mapping[v_idx] = neighbors[0]
-            print(G_road_ig.es.attributes())
 
             try:
                 combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
                 G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                print(G_road_ig.es.attributes())
                 G_road_ig = G_road_ig.simplify(
                                     combine_edges={
                                         "weight": "sum",   # sum weights of parallel edges
@@ -336,7 +333,6 @@ def main():
                                         # you can add other attributes here
                                     }
                                 )
-                print(G_road_ig.es.attributes())
 
             except Exception as e:
                 logger.debug(f"Failed to contract degree-2 vertices: {e}")
@@ -344,7 +340,7 @@ def main():
         print(G_road_ig.es.attributes())
         
         # Contract vertices that are very close to each other - recalculate again
-        close_threshold = 10.0  # meters
+        close_threshold = Config.CLOSE_THRESHOLD  # meters
         vertices_to_contract = []
         
         for v in G_road_ig.vs:
@@ -437,12 +433,17 @@ def main():
             try:
                 combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
                 G_road_ig_random.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig_random.simplify()
+                G_road_ig_random.simplify(
+                                    combine_edges={
+                                        "weight": "sum",   # sum weights of parallel edges
+                                        "length": "sum",   # sum lengths of parallel edges
+                                    }
+                                )
             except Exception as e:
                 logger.debug(f"Failed to contract degree-2 vertices: {e}")
         
         # Contract vertices that are very close to each other - recalculate again
-        close_threshold = 10.0  # meters
+        close_threshold = Config.CLOSE_THRESHOLD  # meters
         vertices_to_contract_random = []
         
         for v in G_road_ig_random.vs:
