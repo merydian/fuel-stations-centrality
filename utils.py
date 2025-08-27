@@ -1409,6 +1409,9 @@ def save_distance_analysis_to_geopackage(
             if will_be_removed:
                 edges_to_remove.append(i)
             
+            # Fix: Use proper edge attribute access
+            edge_length = edge["length"] if "length" in edge.attributes() else 0.0
+            
             edge_data.append({
                 'edge_id': i,
                 'source': u,
@@ -1416,7 +1419,7 @@ def save_distance_analysis_to_geopackage(
                 'source_distance': min_distances[u] if min_distances[u] != np.inf else None,
                 'target_distance': min_distances[v] if min_distances[v] != np.inf else None,
                 'will_be_removed': will_be_removed,
-                'length': edge.get('length', 0.0),
+                'length': edge_length,
                 'geometry': LineString([
                     (G.vs[u]["x"], G.vs[u]["y"]),
                     (G.vs[v]["x"], G.vs[v]["y"])
