@@ -590,6 +590,14 @@ def remove_edges_far_from_stations_graph(
             for p in percentiles:
                 val = np.percentile(finite_distances, p)
                 logger.debug(f"  • {p}th percentile: {val:.1f}m")
+                
+            # Export distance analysis to GeoPackage
+            logger.info("Exporting distance analysis to GeoPackage...")
+            save_distance_analysis_to_geopackage(
+                G, min_distances, max_distance, station_nodes, 
+                out_file=f"distance_analysis_{max_distance}m_threshold.gpkg"
+            )
+            
         else:
             logger.warning("No finite distances found - all nodes unreachable from stations")
         
@@ -1340,4 +1348,176 @@ def process_fuel_stations(stations, max_stations=None):
         )
 
     return stations
+
+def save_distance_analysis_to_geopackage(
+    G, min_distances, max_distance, station_nodes, out_file="distance_analysis.gpkg"
+):
+    """
+    Save distance analysis results to GeoPackage for visualization.
+    
+    Args:
+        G: igraph Graph object (road network)
+        min_distances: numpy array of minimum distances from each node to nearest station
+        max_distance: threshold distance used for filtering
+        station_nodes: list of station node indices
+        out_file: output filename for the GeoPackage
+    """
+    logger.info(f"Saving distance analysis to GeoPackage: {out_file}")
+    
+    # Ensure output directory exists
+    output_dir = "output"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
+    output_path = f"{output_dir}/{out_file}"
+    
+    try:
+        # Create nodes layer with distance information
+        node_data = []
+        for i in range(G.vcount()):
+            node_data.append({
+                'node_id': i,
+                'x': G.vs[i]["x"],
+                'y': G.vs[i]["y"],
+                'min_distance_to_station': min_distances[i] if min_distances[i] != np.inf else None,
+                'is_station': i in station_nodes,
+                'within_threshold': min_distances[i] <= max_distance if min_distances[i] != np.inf else False,
+                'distance_category': _categorize_distance(min_distances[i], max_distance),
+                'geometry': Point(G.vs[i]["x"], G.vs[i]["y"])
+            })
+        
+        gdf_nodes = gpd.GeoDataFrame(node_data, crs=Config.get_target_crs())
+        
+        # Create station nodes layer
+        station_data = []
+        for station_idx in station_nodes:
+            station_data.append({
+                'station_node_id': station_idx,
+                'x': G.vs[station_idx]["x"],
+                'y': G.vs[station_idx]["y"],
+                'geometry': Point(G.vs[station_idx]["x"], G.vs[station_idx]["y"])
+            })
+        
+        gdf_stations = gpd.GeoDataFrame(station_data, crs=Config.get_target_crs())
+        
+        # Create edges layer with removal status
+        edge_data = []
+        edges_to_remove = []
+        for i, edge in enumerate(G.es):
+            u, v = edge.source, edge.target
+            will_be_removed = min_distances[u] > max_distance or min_distances[v] > max_distance
+            if will_be_removed:
+                edges_to_remove.append(i)
+            
+            edge_data.append({
+                'edge_id': i,
+                'source': u,
+                'target': v,
+                'source_distance': min_distances[u] if min_distances[u] != np.inf else None,
+                'target_distance': min_distances[v] if min_distances[v] != np.inf else None,
+                'will_be_removed': will_be_removed,
+                'length': edge.get('length', 0.0),
+                'geometry': LineString([
+                    (G.vs[u]["x"], G.vs[u]["y"]),
+                    (G.vs[v]["x"], G.vs[v]["y"])
+                ])
+            })
+        
+        gdf_edges = gpd.GeoDataFrame(edge_data, crs=Config.get_target_crs())
+        
+        # Create summary statistics
+        finite_distances = min_distances[min_distances != np.inf]
+        summary_data = [{
+            'statistic': 'total_nodes',
+            'value': len(min_distances),
+            'description': 'Total number of nodes in road network'
+        }, {
+            'statistic': 'reachable_nodes',
+            'value': len(finite_distances),
+            'description': 'Nodes reachable from at least one station'
+        }, {
+            'statistic': 'station_nodes',
+            'value': len(station_nodes),
+            'description': 'Number of station nodes'
+        }, {
+            'statistic': 'nodes_within_threshold',
+            'value': int(np.sum(finite_distances <= max_distance)),
+            'description': f'Nodes within {max_distance}m of a station'
+        }, {
+            'statistic': 'nodes_beyond_threshold',
+            'value': int(np.sum(finite_distances > max_distance)),
+            'description': f'Nodes beyond {max_distance}m from any station'
+        }, {
+            'statistic': 'edges_to_remove',
+            'value': len(edges_to_remove),
+            'description': 'Edges that will be removed due to distance threshold'
+        }, {
+            'statistic': 'min_distance',
+            'value': float(np.min(finite_distances)) if len(finite_distances) > 0 else None,
+            'description': 'Minimum distance to nearest station (m)'
+        }, {
+            'statistic': 'max_distance',
+            'value': float(np.max(finite_distances)) if len(finite_distances) > 0 else None,
+            'description': 'Maximum distance to nearest station (m)'
+        }, {
+            'statistic': 'mean_distance',
+            'value': float(np.mean(finite_distances)) if len(finite_distances) > 0 else None,
+            'description': 'Mean distance to nearest station (m)'
+        }, {
+            'statistic': 'median_distance',
+            'value': float(np.median(finite_distances)) if len(finite_distances) > 0 else None,
+            'description': 'Median distance to nearest station (m)'
+        }]
+        
+        # Add percentiles
+        if len(finite_distances) > 0:
+            for p in [10, 25, 50, 75, 90, 95, 99]:
+                summary_data.append({
+                    'statistic': f'p{p}_distance',
+                    'value': float(np.percentile(finite_distances, p)),
+                    'description': f'{p}th percentile distance to nearest station (m)'
+                })
+        
+        # Create a simple geometry for summary (centroid of all nodes)
+        if len(finite_distances) > 0:
+            all_x = [G.vs[i]["x"] for i in range(G.vcount())]
+            all_y = [G.vs[i]["y"] for i in range(G.vcount())]
+            centroid = Point(np.mean(all_x), np.mean(all_y))
+            for item in summary_data:
+                item['geometry'] = centroid
+        
+        gdf_summary = gpd.GeoDataFrame(summary_data, crs=Config.get_target_crs())
+        
+        # Save all layers to GeoPackage
+        logger.info(f"Writing distance analysis to {output_path}...")
+        gdf_nodes.to_file(output_path, layer="nodes_with_distances", driver="GPKG")
+        gdf_stations.to_file(output_path, layer="station_nodes", driver="GPKG")
+        gdf_edges.to_file(output_path, layer="edges_with_removal_status", driver="GPKG")
+        gdf_summary.to_file(output_path, layer="distance_statistics", driver="GPKG")
+        
+        logger.info(f"✓ Distance analysis saved to {output_path}")
+        logger.info(f"  Layers: nodes_with_distances, station_nodes, edges_with_removal_status, distance_statistics")
+        logger.info(f"  Total nodes: {len(gdf_nodes):,}")
+        logger.info(f"  Station nodes: {len(gdf_stations):,}")
+        logger.info(f"  Edges: {len(gdf_edges):,} (will remove {len(edges_to_remove):,})")
+        
+    except Exception as e:
+        logger.error(f"Failed to save distance analysis to {output_path}: {e}")
+        raise
+
+
+def _categorize_distance(distance, threshold):
+    """Categorize distance for visualization purposes."""
+    if distance == np.inf:
+        return "unreachable"
+    elif distance <= threshold * 0.25:
+        return "very_close"
+    elif distance <= threshold * 0.5:
+        return "close"
+    elif distance <= threshold * 0.75:
+        return "moderate"
+    elif distance <= threshold:
+        return "far_but_within_threshold"
+    else:
+        return "beyond_threshold"
 
