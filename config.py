@@ -10,13 +10,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Cook"
+    PLACE = "Mongolia"
     MAX_DISTANCE = 5_000  # meters
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "cook-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Station clustering parameters
