@@ -216,7 +216,7 @@ def main():
                 logger.warning(f"Failed to contract degree-2 vertices: {e}")
         
         # Contract vertices that are very close to each other (< 10 meters) - recalculate again
-        close_threshold = 10.0  # meters
+        close_threshold = Config.CLOSE_THRESHOLD
         vertices_to_contract = []
         
         for v in G_road_ig.vs:

@@ -22,6 +22,9 @@ class Config:
     # Station clustering parameters
     CLUSTER_RADIUS = 5000  # meters - stations within this radius are combined
 
+    # Graph simplification parameters
+    CLOSE_THRESHOLD = 100.0  # Distance threshold in meters for contracting close vertices
+
     # Data limits
     MIN_STATIONS_REQUIRED = 10
     MAX_STATIONS = 100  # Maximum number of stations to use (None = no limit)
