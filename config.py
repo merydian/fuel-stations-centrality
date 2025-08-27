@@ -11,8 +11,8 @@ class Config:
 
     # Analysis parameters
     PLACE = "Mongolia"
-    MAX_DISTANCE = 50_000  # meters
-    N_REMOVE = 80
+    MAX_DISTANCE = 250_000  # meters
+    N_REMOVE = 100
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
@@ -20,14 +20,14 @@ class Config:
     SIMPLIFY_ROAD_NETWORK = True
 
     # Station clustering parameters
-    CLUSTER_RADIUS = 25000  # meters - stations within this radius are combined
+    CLUSTER_RADIUS = 50000  # meters - stations within this radius are combined
 
     # Graph sampling parameter
-    SAMPLE_NODES = 50000  # Number of nodes to sample from road network (None = no sampling)
+    SAMPLE_NODES = None  # Number of nodes to sample from road network (None = no sampling)
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
-    MAX_STATIONS = 100  # Maximum number of stations to use (None = no limit)
+    MAX_STATIONS = None  # Maximum number of stations to use (None = no limit)
 
     # Random seed for reproducibility
     RANDOM_SEED = 42
