@@ -216,7 +216,7 @@ def main():
                 logger.warning(f"Failed to contract degree-2 vertices: {e}")
         
         # Contract vertices that are very close to each other (< 10 meters) - recalculate again
-        close_threshold = Config.CLOSE_THRESHOLD
+        CLUSTER_RADIUS = Config.CLUSTER_RADIUS
         vertices_to_contract = []
         
         for v in G_road_ig.vs:
@@ -227,7 +227,7 @@ def main():
                         if 'x' in neighbor_v.attributes() and 'y' in neighbor_v.attributes():
                             # Calculate Euclidean distance
                             dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
-                            if dist < close_threshold and v.index < neighbor:  # Avoid duplicates
+                            if dist < CLUSTER_RADIUS and v.index < neighbor:  # Avoid duplicates
                                 vertices_to_contract.append((v.index, neighbor))
         
         # Contract close vertices using mapping
@@ -340,7 +340,7 @@ def main():
         print(G_road_ig.es.attributes())
         
         # Contract vertices that are very close to each other - recalculate again
-        close_threshold = Config.CLOSE_THRESHOLD  # meters
+        CLUSTER_RADIUS = Config.CLUSTER_RADIUS  # meters
         vertices_to_contract = []
         
         for v in G_road_ig.vs:
@@ -350,7 +350,7 @@ def main():
                         neighbor_v = G_road_ig.vs[neighbor]
                         if 'x' in neighbor_v.attributes() and 'y' in neighbor_v.attributes():
                             dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
-                            if dist < close_threshold and v.index < neighbor:
+                            if dist < CLUSTER_RADIUS and v.index < neighbor:
                                 vertices_to_contract.append((v.index, neighbor))
         
         if vertices_to_contract:
@@ -443,7 +443,7 @@ def main():
                 logger.debug(f"Failed to contract degree-2 vertices: {e}")
         
         # Contract vertices that are very close to each other - recalculate again
-        close_threshold = Config.CLOSE_THRESHOLD  # meters
+        CLUSTER_RADIUS = Config.CLUSTER_RADIUS  # meters
         vertices_to_contract_random = []
         
         for v in G_road_ig_random.vs:
@@ -453,7 +453,7 @@ def main():
                         neighbor_v = G_road_ig_random.vs[neighbor]
                         if 'x' in neighbor_v.attributes() and 'y' in neighbor_v.attributes():
                             dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
-                            if dist < close_threshold and v.index < neighbor:
+                            if dist < CLUSTER_RADIUS and v.index < neighbor:
                                 vertices_to_contract_random.append((v.index, neighbor))
         
         if vertices_to_contract_random:

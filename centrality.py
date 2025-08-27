@@ -235,7 +235,7 @@ def straightness_centrality(g: ig.Graph, weight: str = None):
     if n == 0:
         return []
 
-    logger.info(f"Computing straightness centrality for {n} nodes using {'Numba JIT'}")
+    logger.info(f"Computing straightness centrality for {g.vcount():,} nodes and {g.ecount():,} edges using Numba JIT")
 
     # Extract node coordinates as numpy arrays for Numba optimization
     coords_x = np.array([v["x"] for v in g.vs], dtype=np.float64)

@@ -11,7 +11,7 @@ class Config:
 
     # Analysis parameters
     PLACE = "Mongolia"
-    MAX_DISTANCE = 50_000  # meters
+    MAX_DISTANCE = 5_000  # meters
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
@@ -21,9 +21,6 @@ class Config:
 
     # Station clustering parameters
     CLUSTER_RADIUS = 5000  # meters - stations within this radius are combined
-
-    # Graph simplification parameters
-    CLOSE_THRESHOLD = 10000  # Distance threshold in meters for contracting close vertices
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
