@@ -10,20 +10,17 @@ class Config:
 
     # Analysis parameters
     PLACE = "Cook"
-    MAX_DISTANCE = 2  # meters
-    N_REMOVE = 2
+    MAX_DISTANCE = 50_000
+    N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / "cook-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
-    # Station clustering parameters
-    CLUSTER_RADIUS = 50_000  # meters - stations within this radius are combined
-
     # Graph sampling parameter
     SAMPLE_NODES = (
-        None  # Number of nodes to sample from road network (None = no sampling)
+        5_000  # Number of nodes to sample from road network (None = no sampling)
     )
 
     # Data limits
@@ -38,29 +35,8 @@ class Config:
     OUTPUT_DIR = Path("output")
     CACHE_DIR = Path("cache")
 
-    # File names
-    LOG_FILE = "fuel_stations.log"
-    STATS_FILE = OUTPUT_DIR / "stats.json"  # Path to save all stats
-
     # Coordinate Reference System (CRS) configuration
-    WGS84_EPSG = 4326  # Input CRS from OSM data
     EPSG_CODE = 32705  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
-
-    # Logging configuration
-    LOG_LEVEL = "DEBUG"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
-
-    # Centrality calculation control
-    CALCULATE_DEGREE_CENTRALITY = True
-    CALCULATE_CLOSENESS_CENTRALITY = False
-    CALCULATE_BETWEENNESS_CENTRALITY = False
-    CALCULATE_EIGENVECTOR_CENTRALITY = False
-    CALCULATE_STRAIGHTNESS_CENTRALITY = True
-    CALCULATE_GLOBAL_STRAIGHTNESS = True
-
-    @classmethod
-    def get_wgs84_crs(cls):
-        """Get WGS84 CRS string."""
-        return f"EPSG:{cls.WGS84_EPSG}"
 
     @classmethod
     def get_target_crs(cls):

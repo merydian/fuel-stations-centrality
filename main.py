@@ -62,10 +62,17 @@ def main():
     nx_nodes_to_gpkg(G_road, random_stations_to_remove, "random")
     nx_nodes_to_gpkg(G_road, stations, "all_stations")
 
-    print("Straightness Centrality:")
-    print(graph_straightness(G_road_ig))
-    print(graph_straightness(G_road_filtered_ig))
-    print(graph_straightness(G_road_ig_random_ig))
+    graphs = {
+        "Original Road Graph": G_road_ig,
+        "Filtered Road Graph": G_road_filtered_ig,
+        "Randomized Road Graph": G_road_ig_random_ig
+    }
+
+    print("=== Straightness Centrality ===")
+    for name, graph in graphs.items():
+        centrality = graph_straightness(graph)
+        print(f"{name}: {centrality:.4f}")  # rounds to 4 decimal places
+
 
 
 if __name__ == "__main__":
