@@ -23,7 +23,7 @@ class Config:
     CLUSTER_RADIUS = 50_000  # meters - stations within this radius are combined
 
     # Graph sampling parameter
-    SAMPLE_NODES = 50_000  # Number of nodes to sample from road network (None = no sampling)
+    SAMPLE_NODES = None  # Number of nodes to sample from road network (None = no sampling)
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
