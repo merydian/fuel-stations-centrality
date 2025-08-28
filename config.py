@@ -2,7 +2,6 @@
 Configuration file for fuel station centrality analysis.
 """
 
-import os
 from pathlib import Path
 
 
@@ -23,7 +22,9 @@ class Config:
     CLUSTER_RADIUS = 50_000  # meters - stations within this radius are combined
 
     # Graph sampling parameter
-    SAMPLE_NODES = None  # Number of nodes to sample from road network (None = no sampling)
+    SAMPLE_NODES = (
+        None  # Number of nodes to sample from road network (None = no sampling)
+    )
 
     # Data limits
     MIN_STATIONS_REQUIRED = 2
@@ -119,15 +120,22 @@ class Config:
 
         if cls.MAX_DISTANCE <= 0:
             raise ValueError("MAX_DISTANCE must be positive")
-            
+
         if cls.MAX_STATIONS is not None and cls.MAX_STATIONS <= 0:
             raise ValueError("MAX_STATIONS must be positive or None")
-            
-        if cls.MAX_STATIONS is not None and cls.MAX_STATIONS < cls.MIN_STATIONS_REQUIRED:
-            raise ValueError(f"MAX_STATIONS ({cls.MAX_STATIONS}) must be >= MIN_STATIONS_REQUIRED ({cls.MIN_STATIONS_REQUIRED})")
-            
+
+        if (
+            cls.MAX_STATIONS is not None
+            and cls.MAX_STATIONS < cls.MIN_STATIONS_REQUIRED
+        ):
+            raise ValueError(
+                f"MAX_STATIONS ({cls.MAX_STATIONS}) must be >= MIN_STATIONS_REQUIRED ({cls.MIN_STATIONS_REQUIRED})"
+            )
+
         if cls.MAX_STATIONS is not None and cls.N_REMOVE >= cls.MAX_STATIONS:
-            raise ValueError(f"N_REMOVE ({cls.N_REMOVE}) must be < MAX_STATIONS ({cls.MAX_STATIONS})")
+            raise ValueError(
+                f"N_REMOVE ({cls.N_REMOVE}) must be < MAX_STATIONS ({cls.MAX_STATIONS})"
+            )
 
         if cls.SAMPLE_NODES is not None and cls.SAMPLE_NODES <= 0:
             raise ValueError("SAMPLE_NODES must be positive or None")

@@ -1,6 +1,7 @@
 """
 Enhanced main module with improved error handling and code structure.
 """
+
 import random
 
 from config import Config
@@ -19,9 +20,7 @@ def main():
     Config.ensure_directories()
     Config.validate_config()
 
-    pbf_stem = (
-        Config.LOCAL_PBF_PATH.stem if hasattr(Config, "LOCAL_PBF_PATH") else "unknown"
-    )
+    (Config.LOCAL_PBF_PATH.stem if hasattr(Config, "LOCAL_PBF_PATH") else "unknown")
 
     road_filepath = Config.get_road_filepath()
     G_road = ox.load_graphml(road_filepath)

@@ -5,6 +5,7 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
+
 def get_gas_stations_from_graph(G):
     """
     Get gas stations within the area of a NetworkX graph from OSMnx.
@@ -49,6 +50,7 @@ def get_gas_stations_from_graph(G):
         logger.error(f"Failed to extract gas stations: {e}")
         raise
 
+
 def convert_networkx_to_igraph(G_nx):
     """
     Convert NetworkX graph to igraph for centrality calculations.
@@ -63,7 +65,7 @@ def convert_networkx_to_igraph(G_nx):
     import igraph as ig
 
     logger.info("Converting NetworkX graph to igraph...")
-    logger.debug(f"Input graph CRS info: nodes have x,y coordinates in projected space")
+    logger.debug("Input graph CRS info: nodes have x,y coordinates in projected space")
 
     # Create node mapping
     node_list = list(G_nx.nodes())
@@ -96,6 +98,5 @@ def convert_networkx_to_igraph(G_nx):
     logger.info(
         f"✓ Converted NetworkX to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges"
     )
-    logger.debug(f"Preserved projected coordinates in igraph node attributes")
+    logger.debug("Preserved projected coordinates in igraph node attributes")
     return G_ig
-

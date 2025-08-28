@@ -1,6 +1,5 @@
-from setuptools import setup, Extension
+from setuptools import setup
 from pybind11.setup_helpers import Pybind11Extension, build_ext
-from pybind11 import get_cmake_dir
 import pybind11
 
 ext_modules = [
@@ -11,14 +10,14 @@ ext_modules = [
             "stats.cpp",
             # Add other required source files:
             # "graph.cpp",
-            # "config.cpp", 
+            # "config.cpp",
             # "centrality.cpp",
         ],
         include_dirs=[
             # Path to pybind11 headers
             pybind11.get_include(),
         ],
-        language='c++'
+        language="c++",
     ),
 ]
 

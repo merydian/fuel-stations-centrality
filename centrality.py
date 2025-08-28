@@ -76,7 +76,6 @@ def get_knn_dists(G, weight=None, n=None):
     )
 
     # Compute farness and normalized farness for each node
-    norm_farness = {}
     n = G.vcount()
 
     logger.debug(f"Using weight attribute: {weight}")
@@ -205,7 +204,9 @@ def straightness_centrality(g: ig.Graph, weight: str = None):
     if n == 0:
         return []
 
-    logger.info(f"Computing straightness centrality for {g.vcount():,} nodes and {g.ecount():,} edges using Numba JIT")
+    logger.info(
+        f"Computing straightness centrality for {g.vcount():,} nodes and {g.ecount():,} edges using Numba JIT"
+    )
 
     # Extract node coordinates as numpy arrays for Numba optimization
     coords_x = np.array([v["x"] for v in g.vs], dtype=np.float64)
