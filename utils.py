@@ -29,9 +29,6 @@ def get_gas_stations_from_graph(G):
         gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, tags=tags)
         logger.info(f"Got {len(gas_stations)} gas station features")
 
-        # Use Config's unified projection logic
-        gas_stations = Config.ensure_target_crs(gas_stations, "gas stations")
-
         if Config.MAX_STATIONS:
             gas_stations = gas_stations.head(Config.MAX_STATIONS)
 

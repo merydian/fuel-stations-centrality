@@ -9,13 +9,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Mongolia"
+    PLACE = "Mauritania"
     MAX_DISTANCE = 100_000
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mauritania-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Graph sampling parameter
@@ -58,10 +58,6 @@ class Config:
         import logging
 
         logger = logging.getLogger(__name__)
-
-        if gdf.crs is None:
-            logger.info(f"Setting {name} CRS to WGS84 (assumed)")
-            gdf.crs = cls.get_wgs84_crs()
 
         if str(gdf.crs) != cls.get_target_crs():
             logger.info(f"Projecting {name} from {gdf.crs} to {cls.get_target_crs()}")
