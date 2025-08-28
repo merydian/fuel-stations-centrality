@@ -370,7 +370,7 @@ def cluster_nearby_stations(stations_gdf, radius_meters=500):
     return clustered_gdf
 
 
-def get_gas_stations_from_graph(G, area_polygon=None):
+def get_gas_stations_from_graph():
     """
     Get gas stations within the area of a NetworkX graph from OSMnx.
     Uses unified projection logic from Config and clusters nearby stations.
