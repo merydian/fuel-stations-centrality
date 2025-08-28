@@ -1,10 +1,12 @@
 import random
 
 from config import Config
-from centrality import get_knn_dists
+from centrality import nodes_highest_avg_knn_distance_nx
 from utils import (
     get_gas_stations_from_graph,
     convert_networkx_to_igraph,
+    igraph_edges_to_gpkg,
+    nx_nodes_to_gpkg,
 )
 import osmnx as ox
 import networkx as nx
@@ -21,29 +23,21 @@ def main():
     G_road = ox.load_graphml(road_filepath)
     G_road.remove_edges_from(nx.selfloop_edges(G_road))
 
-    stations = get_gas_stations_from_graph(G_road)
-
-    print("Gas stations found:", stations)
-
-    G_stations = G_road.subgraph(stations).copy()
-
-    G_stations = convert_networkx_to_igraph(G_stations)
-
-    G_stations, knn_dist = get_knn_dists(G_stations, weight="weight", n=Config.K_NN)
-
     G_road_ig = convert_networkx_to_igraph(G_road)
 
-    sorted_stations = sorted(knn_dist.items(), key=lambda x: x[1], reverse=True)
-    stations_to_remove = [
-        station_id for station_id, _ in sorted_stations[: Config.N_REMOVE]
-    ]
+    stations = get_gas_stations_from_graph(G_road)
+
+    stations_to_remove = nodes_highest_avg_knn_distance_nx(G_road, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations)
+
+    assert G_road_ig is not None
+
     G_road_filtered = G_road.copy()
     G_road_filtered.remove_nodes_from(stations_to_remove)
     G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
     ig_indices = [
         v.index for v in G_road_filtered_ig.vs if v["name"] in stations_to_remove
     ]
-    G_road_filtered_ig = G_road_filtered_ig.delete_vertices(ig_indices)
+    G_road_filtered_ig.delete_vertices(ig_indices)
 
     random.seed(Config.RANDOM_SEED)
     random_stations_to_remove = random.sample(
@@ -58,7 +52,18 @@ def main():
         for v in G_road_ig_random_ig.vs
         if v["name"] in random_stations_to_remove
     ]
-    G_road_ig_random_ig = G_road_ig_random_ig.delete_vertices(ig_indices)
+    G_road_ig_random_ig.delete_vertices(ig_indices)
+
+    assert G_road_ig_random_ig is not None
+    assert G_road_filtered_ig is not None
+
+    igraph_edges_to_gpkg(G_road_ig_random_ig, "random")
+    igraph_edges_to_gpkg(G_road_filtered_ig, "knn")
+    igraph_edges_to_gpkg(G_road_ig, "base")
+
+    nx_nodes_to_gpkg(G_road, stations_to_remove, "knn")
+    nx_nodes_to_gpkg(G_road, random_stations_to_remove, "random")
+    nx_nodes_to_gpkg(G_road, stations, "all_stations")
 
 
 if __name__ == "__main__":

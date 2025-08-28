@@ -1,6 +1,8 @@
 import logging
 import osmnx as ox
 from config import Config
+from shapely.geometry import LineString, Point
+import geopandas as gpd
 
 
 logger = logging.getLogger(__name__)
@@ -100,3 +102,38 @@ def convert_networkx_to_igraph(G_nx):
     )
     logger.debug("Preserved projected coordinates in igraph node attributes")
     return G_ig
+
+def igraph_edges_to_gpkg(g, name):
+    edges = g.es
+    edge_gdf = gpd.GeoDataFrame(
+        {"source": [e.source for e in edges],
+        "target": [e.target for e in edges]},
+        geometry=[LineString([(g.vs[e.source]["x"], g.vs[e.source]["y"]),
+                            (g.vs[e.target]["x"], g.vs[e.target]["y"])])
+                for e in edges],
+        crs=f"EPSG:{Config.EPSG_CODE}"
+    )
+    edge_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_edges.gpkg", layer=name, driver="GPKG")
+
+def nx_nodes_to_gpkg(G, selected_nodes, name):
+    """
+    Export NetworkX nodes to a GeoPackage as points.
+
+    Parameters:
+    - G: networkx.Graph
+    - name: name of the output layer
+    - output_dir: folder to save the GPKG
+    - epsg: coordinate reference system (default 4326)
+    """
+    geometries = []
+    node_attrs = []
+
+    for node in selected_nodes:
+        attrs = G.nodes[node]
+        x = attrs.get("x")
+        y = attrs.get("y")
+        geometries.append(Point(x, y))
+        node_attrs.append(attrs)
+
+    node_gdf = gpd.GeoDataFrame(node_attrs, geometry=geometries, crs=f"EPSG:{Config.EPSG_CODE}")
+    node_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_nodes.gpkg", layer=name, driver="GPKG")
