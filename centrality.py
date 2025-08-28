@@ -76,7 +76,6 @@ def farness_centrality(G, weight=None, n=None):
     )
 
     # Compute farness and normalized farness for each node
-    farness = {}
     norm_farness = {}
     n = G.vcount()
 
@@ -114,7 +113,7 @@ def farness_centrality(G, weight=None, n=None):
 
     G, knn_dist = get_knn_distance(G, weight, n)
 
-    return G, farness, knn_dist
+    return G, knn_dist
 
 
 def download_graph(place):

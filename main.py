@@ -25,6 +25,7 @@ from utils import (
     save_stations_to_geopackage,
     make_graph_from_stations,
     process_fuel_stations,
+    remove_stations_from_road_network
 )
 import osmnx as ox
 
@@ -165,7 +166,7 @@ def main():
         logger.info(
             "  Computing farness centrality and k-NN distances on station graph..."
         )
-        G_stations, farness_stations, knn_dist = farness_centrality(
+        G_stations, knn_dist = farness_centrality(
             G_stations, weight="weight", n=Config.K_NN
         )
         logger.info(f"✓ Station analysis complete: {len(knn_dist)} stations analyzed")
@@ -322,8 +323,8 @@ def main():
         step_start = log_step_start(
             "9", "Removing identified stations from road network"
         )
-        # G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
-        G_road_ig = convert_networkx_to_igraph(G_road)
+        G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
+        G_road_ig = convert_networkx_to_igraph(G_road_filtered)
         
         # Contract vertices with degree 2 - recalculate after simplification
         degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
