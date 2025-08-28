@@ -10,10 +10,12 @@ from utils import (
 )
 import osmnx as ox
 import networkx as nx
+import time
 
 
 def main():
     """Main function for fuel station centrality analysis."""
+    start = time.time()
     Config.ensure_directories()
     Config.validate_config()
 
@@ -73,6 +75,11 @@ def main():
         centrality = graph_straightness(graph)
         print(f"{name}: {centrality:.4f}")  # rounds to 4 decimal places
 
+    end = time.time()
+    elapsed = end - start
+    hours, rem = divmod(elapsed, 3600)
+    minutes, seconds = divmod(rem, 60)
+    print(f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
 
 
 if __name__ == "__main__":
