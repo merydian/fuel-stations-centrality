@@ -210,7 +210,12 @@ def main():
                     "name": "first"  # Take first value for string attributes
                 }
                 G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig.simplify()  # Clean up after contraction
+                G_road_ig.simplify(
+                                    combine_edges={
+                                        "weight": "sum",   # sum weights of parallel edges
+                                        "length": "sum",   # sum lengths of parallel edges
+                                    }
+                                )  # Clean up after contraction
                 logger.debug(f"Successfully contracted {len(degree_2_vertices)} degree-2 vertices")
             except Exception as e:
                 logger.warning(f"Failed to contract degree-2 vertices: {e}")
@@ -250,7 +255,13 @@ def main():
                     "name": "first"  # Take first value for string attributes
                 }
                 G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig.simplify()  # Clean up after contraction
+                G_road_ig.simplify(
+                                    combine_edges={
+                                        "weight": "sum",   # sum weights of parallel edges
+                                        "length": "sum",   # sum lengths of parallel edges
+                                        # you can add other attributes here
+                                    }
+                                )  # Clean up after contraction
                 logger.debug(f"Successfully contracted {len(vertices_to_contract)} close vertex pairs")
             except Exception as e:
                 logger.warning(f"Failed to contract close vertices: {e}")
@@ -465,7 +476,13 @@ def main():
             try:
                 combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
                 G_road_ig_random.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig_random.simplify()
+                G_road_ig_random.simplify(
+                                    combine_edges={
+                                        "weight": "sum",   # sum weights of parallel edges
+                                        "length": "sum",   # sum lengths of parallel edges
+                                        # you can add other attributes here
+                                    }
+                                )
             except Exception as e:
                 logger.debug(f"Failed to contract close vertices: {e}")
         logger.info(
