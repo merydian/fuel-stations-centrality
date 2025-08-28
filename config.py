@@ -20,14 +20,14 @@ class Config:
     SIMPLIFY_ROAD_NETWORK = True
 
     # Station clustering parameters
-    CLUSTER_RADIUS = 50000  # meters - stations within this radius are combined
+    CLUSTER_RADIUS = 50_000  # meters - stations within this radius are combined
 
     # Graph sampling parameter
-    SAMPLE_NODES = None  # Number of nodes to sample from road network (None = no sampling)
+    SAMPLE_NODES = 50_000  # Number of nodes to sample from road network (None = no sampling)
 
     # Data limits
     MIN_STATIONS_REQUIRED = 10
-    MAX_STATIONS = None  # Maximum number of stations to use (None = no limit)
+    MAX_STATIONS = 300  # Maximum number of stations to use (None = no limit)
 
     # Random seed for reproducibility
     RANDOM_SEED = 42
