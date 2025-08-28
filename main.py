@@ -1,12 +1,7 @@
-"""
-Enhanced main module with improved error handling and code structure.
-"""
-
 import random
 
 from config import Config
 from centrality import get_knn_dists
-import stats_cpp
 from utils import (
     get_gas_stations_from_graph,
     convert_networkx_to_igraph,
@@ -64,14 +59,6 @@ def main():
         if v["name"] in random_stations_to_remove
     ]
     G_road_ig_random_ig = G_road_ig_random_ig.delete_vertices(ig_indices)
-
-    old_stats = stats_cpp.GraphStatsCalculator.get_graph_stats(G_road_ig)
-    smart_stats = stats_cpp.GraphStatsCalculator.get_graph_stats(G_road_ig)
-    random_stats = stats_cpp.GraphStatsCalculator.get_graph_stats(G_road_ig_random)
-
-    print("Old stats:", old_stats)
-    print("Smart stats:", smart_stats)
-    print("Random stats:", random_stats)
 
 
 if __name__ == "__main__":
