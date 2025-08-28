@@ -36,7 +36,7 @@ class Config:
     CACHE_DIR = Path("cache")
 
     # Coordinate Reference System (CRS) configuration
-    EPSG_CODE = 32705  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
+    EPSG_CODE = 32628  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
 
     @classmethod
     def get_target_crs(cls):
