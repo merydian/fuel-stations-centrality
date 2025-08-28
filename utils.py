@@ -1,7 +1,4 @@
-import geopandas as gpd
 import logging
-
-from shapely.ops import transform
 import osmnx as ox
 from config import Config
 
