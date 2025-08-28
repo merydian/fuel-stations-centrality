@@ -39,7 +39,6 @@ def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_su
 
     # Sort by average distance descending and take top n
     avg_distances.sort(key=lambda x: x[1], reverse=True)
-    print("knn-dists", avg_distances)
     top_nodes = [node for node, _ in avg_distances[:n]]
     return top_nodes
 

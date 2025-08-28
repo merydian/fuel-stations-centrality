@@ -80,6 +80,8 @@ def main():
     hours, rem = divmod(elapsed, 3600)
     minutes, seconds = divmod(rem, 60)
     print(f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
+    print("Nodes:", G_road_ig.vcount())
+    print("Edges:", G_road_ig.ecount())
 
 
 if __name__ == "__main__":
