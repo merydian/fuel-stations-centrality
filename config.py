@@ -10,13 +10,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Mongolia"
-    MAX_DISTANCE = 250_000  # meters
-    N_REMOVE = 100
+    PLACE = "Cook"
+    MAX_DISTANCE = 2  # meters
+    N_REMOVE = 2
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "cook-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Station clustering parameters
@@ -26,7 +26,7 @@ class Config:
     SAMPLE_NODES = None  # Number of nodes to sample from road network (None = no sampling)
 
     # Data limits
-    MIN_STATIONS_REQUIRED = 10
+    MIN_STATIONS_REQUIRED = 2
     MAX_STATIONS = 300  # Maximum number of stations to use (None = no limit)
 
     # Random seed for reproducibility
@@ -43,7 +43,7 @@ class Config:
 
     # Coordinate Reference System (CRS) configuration
     WGS84_EPSG = 4326  # Input CRS from OSM data
-    EPSG_CODE = 32648  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
+    EPSG_CODE = 32642  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
 
     # Logging configuration
     LOG_LEVEL = "DEBUG"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL

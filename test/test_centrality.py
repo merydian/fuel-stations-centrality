@@ -9,7 +9,7 @@ from shapely.geometry import Point
 import networkx as nx
 import openrouteservice as ors
 
-from centrality import farness_centrality
+from centrality import get_knn_dists
 from ors_router import get_ors_distance_matrix
 from downloader import get_fuel_stations
 
@@ -136,7 +136,7 @@ class TestFarnessCentrality:
         G = nx.Graph()
         G.add_edges_from([(1, 2), (2, 3), (3, 4)])
 
-        result = farness_centrality(G)
+        result = get_knn_dists(G)
 
         # Check that all nodes are in the result
         assert set(result.keys()) == {1, 2, 3, 4}
@@ -155,7 +155,7 @@ class TestFarnessCentrality:
         G = nx.Graph()
         G.add_node(1)
 
-        result = farness_centrality(G)
+        result = get_knn_dists(G)
 
         assert len(result) == 1
         assert result[1] == 0  # Single node has no distances to sum
@@ -165,8 +165,8 @@ class TestFarnessCentrality:
         G = nx.Graph()
         G.add_weighted_edges_from([(1, 2, 1.0), (2, 3, 2.0), (3, 4, 1.0)])
 
-        result_unweighted = farness_centrality(G)
-        result_weighted = farness_centrality(G, weight="weight")
+        result_unweighted = get_knn_dists(G)
+        result_weighted = get_knn_dists(G, weight="weight")
 
         # Results should be different when weights are considered
         assert result_unweighted != result_weighted
@@ -180,7 +180,7 @@ class TestFarnessCentrality:
         G = nx.Graph()
         G.add_edges_from([(1, 2), (3, 4)])  # Two disconnected components
 
-        result = farness_centrality(G)
+        result = get_knn_dists(G)
 
         # Should still work, but unreachable nodes won't contribute to the sum
         assert len(result) == 4

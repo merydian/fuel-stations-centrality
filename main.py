@@ -10,7 +10,7 @@ from datetime import datetime
 
 
 from config import Config
-from centrality import farness_centrality
+from centrality import get_knn_dists
 import stats_cpp  # Add C++ stats import
 from utils import (
     save_graph_to_geopackage,
@@ -28,6 +28,7 @@ from utils import (
     remove_stations_from_road_network
 )
 import osmnx as ox
+import networkx as nx
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,6 @@ def main():
     logger.info(f"  • Stations to remove: {Config.N_REMOVE}")
     logger.info(f"  • k-NN parameter: {Config.K_NN}")
     logger.info(f"  • Removal criteria: {Config.REMOVAL_KIND}")
-    logger.info(f"  • Station clustering radius: {Config.CLUSTER_RADIUS}m")
     logger.info(f"  • Max stations limit: {Config.MAX_STATIONS if Config.MAX_STATIONS else 'No limit'}")
     logger.info(f"  • Log level: {Config.LOG_LEVEL}")
     logger.info("")
@@ -79,6 +79,7 @@ def main():
         road_filepath = Config.get_road_filepath()
         logger.info(f"Loading road network from {road_filepath}")
         G_road = ox.load_graphml(road_filepath)
+        G_road.remove_edges_from(nx.selfloop_edges(G_road))
 
         logger.info(
             f"✓ Cached road network loaded: {len(G_road.nodes):,} nodes, {len(G_road.edges):,} edges"
@@ -107,7 +108,6 @@ def main():
             logger.info(f"  • Stations combined: {reduction_count:,}")
             logger.info(f"  • Multi-station clusters: {clustered_stations}")
             logger.info(f"  • Clustering reduction: {reduction_percent:.1f}%")
-            logger.info(f"  • Clustering radius: {Config.CLUSTER_RADIUS}m")
         else:
             logger.info(f"✓ No clustering applied: {len(stations):,} stations")
             
@@ -125,15 +125,6 @@ def main():
             stations, out_file=f"all_gas_stations_{Config.get_road_filename()}.gpkg"
         )
         
-        # Update log message to reflect clustering
-        if 'cluster_id' in stations.columns:
-            logger.info(
-                f"✓ All {len(stations)} clustered gas stations (representing {stations['stations_in_cluster'].sum()} original stations) saved to all_gas_stations_{Config.get_road_filename()}.gpkg"
-            )
-        else:
-            logger.info(
-                f"✓ All {len(stations)} gas stations saved to all_gas_stations_{Config.get_road_filename()}.gpkg"
-            )
         log_step_end(step_start, "1.5", "Gas stations save")
 
         # Step 2: Map stations to road network (needed for both methods)
@@ -166,7 +157,7 @@ def main():
         logger.info(
             "  Computing farness centrality and k-NN distances on station graph..."
         )
-        G_stations, knn_dist = farness_centrality(
+        G_stations, knn_dist = get_knn_dists(
             G_stations, weight="weight", n=Config.K_NN
         )
         logger.info(f"✓ Station analysis complete: {len(knn_dist)} stations analyzed")
@@ -177,103 +168,6 @@ def main():
             "5", "Converting road network for centrality analysis"
         )
         G_road_ig = convert_networkx_to_igraph(G_road)
-
-        # Simplify and contract the graph before centrality calculations
-        logger.info("  Simplifying and contracting graph for centrality analysis...")
-        original_nodes = G_road_ig.vcount()
-        original_edges = G_road_ig.ecount()
-        
-        # First simplify to remove multi-edges and self-loops
-        G_road_ig.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
-        after_simplify_nodes = G_road_ig.vcount()
-        
-        # Then contract vertices with degree 2 (chain nodes) - recalculate after simplification
-        degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
-        if degree_2_vertices:
-            logger.debug(f"Found {len(degree_2_vertices)} degree-2 vertices to contract")
-            
-            # Create mapping vector for contraction
-            # For degree-2 vertices, map each to its first neighbor
-            mapping = list(range(G_road_ig.vcount()))  # Default: each vertex maps to itself
-            
-            for v_idx in degree_2_vertices:
-                neighbors = G_road_ig.neighbors(v_idx)
-                if len(neighbors) >= 1:
-                    # Map this vertex to its first neighbor
-                    mapping[v_idx] = neighbors[0]
-            
-            # Apply contraction using the mapping with proper attribute handling
-            try:
-                # Define how to combine attributes - only use mean for numeric attributes
-                combine_attrs = {
-                    "x": "mean",  # Numeric coordinates
-                    "y": "mean",  # Numeric coordinates
-                    "name": "first"  # Take first value for string attributes
-                }
-                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig.simplify(
-                                    combine_edges={
-                                        "weight": "sum",   # sum weights of parallel edges
-                                        "length": "sum",   # sum lengths of parallel edges
-                                    }
-                                )  # Clean up after contraction
-                logger.debug(f"Successfully contracted {len(degree_2_vertices)} degree-2 vertices")
-            except Exception as e:
-                logger.warning(f"Failed to contract degree-2 vertices: {e}")
-        
-        # Contract vertices that are very close to each other (< 10 meters) - recalculate again
-        CLUSTER_RADIUS = Config.CLUSTER_RADIUS
-        vertices_to_contract = []
-        
-        for v in G_road_ig.vs:
-            if 'x' in v.attributes() and 'y' in v.attributes():
-                for neighbor in G_road_ig.neighbors(v.index):
-                    if neighbor < len(G_road_ig.vs):  # Ensure valid index
-                        neighbor_v = G_road_ig.vs[neighbor]
-                        if 'x' in neighbor_v.attributes() and 'y' in neighbor_v.attributes():
-                            # Calculate Euclidean distance
-                            dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
-                            if dist < CLUSTER_RADIUS and v.index < neighbor:  # Avoid duplicates
-                                vertices_to_contract.append((v.index, neighbor))
-        
-        # Contract close vertices using mapping
-        if vertices_to_contract:
-            logger.debug(f"Found {len(vertices_to_contract)} close vertex pairs to contract")
-            
-            # Create mapping for close vertices
-            mapping = list(range(G_road_ig.vcount()))
-            
-            for v1, v2 in vertices_to_contract:
-                if v1 < len(mapping) and v2 < len(mapping):
-                    # Map the higher index to the lower index
-                    mapping[max(v1, v2)] = min(v1, v2)
-            
-            try:
-                # Define how to combine attributes
-                combine_attrs = {
-                    "x": "mean",  # Numeric coordinates
-                    "y": "mean",  # Numeric coordinates
-                    "name": "first"  # Take first value for string attributes
-                }
-                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig.simplify(
-                                    combine_edges={
-                                        "weight": "sum",   # sum weights of parallel edges
-                                        "length": "sum",   # sum lengths of parallel edges
-                                        # you can add other attributes here
-                                    }
-                                )  # Clean up after contraction
-                logger.debug(f"Successfully contracted {len(vertices_to_contract)} close vertex pairs")
-            except Exception as e:
-                logger.warning(f"Failed to contract close vertices: {e}")
-        
-        simplified_nodes = G_road_ig.vcount()
-        simplified_edges = G_road_ig.ecount()
-        
-        logger.info(f"  Graph simplified and contracted: {original_nodes:,} → {simplified_nodes:,} nodes, "
-                   f"{original_edges:,} → {simplified_edges:,} edges")
-        logger.info(f"  Attempted to contract {len(degree_2_vertices)} degree-2 vertices and {len(vertices_to_contract)} close vertex pairs")
-        log_step_end(step_start, "5", "Road network conversion")
 
         # Step 6: Get baseline statistics on full road network
         step_start = log_step_start("6", "Computing baseline road network statistics")
@@ -326,64 +220,6 @@ def main():
         G_road_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, stations_to_remove)
         G_road_ig = convert_networkx_to_igraph(G_road_filtered)
         
-        # Contract vertices with degree 2 - recalculate after simplification
-        degree_2_vertices = [v.index for v in G_road_ig.vs if v.degree() == 2]
-        if degree_2_vertices:
-            mapping = list(range(G_road_ig.vcount()))
-            for v_idx in degree_2_vertices:
-                neighbors = G_road_ig.neighbors(v_idx)
-                if len(neighbors) >= 1:
-                    mapping[v_idx] = neighbors[0]
-
-            try:
-                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
-                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig = G_road_ig.simplify(
-                                    combine_edges={
-                                        "weight": "sum",   # sum weights of parallel edges
-                                        "length": "sum",   # sum lengths of parallel edges
-                                        # you can add other attributes here
-                                    }
-                                )
-
-            except Exception as e:
-                logger.debug(f"Failed to contract degree-2 vertices: {e}")
-        
-        print(G_road_ig.es.attributes())
-        
-        # Contract vertices that are very close to each other - recalculate again
-        CLUSTER_RADIUS = Config.CLUSTER_RADIUS  # meters
-        vertices_to_contract = []
-        
-        for v in G_road_ig.vs:
-            if 'x' in v.attributes() and 'y' in v.attributes():
-                for neighbor in G_road_ig.neighbors(v.index):
-                    if neighbor < len(G_road_ig.vs):
-                        neighbor_v = G_road_ig.vs[neighbor]
-                        if 'x' in neighbor_v.attributes() and 'y' in neighbor_v.attributes():
-                            dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
-                            if dist < CLUSTER_RADIUS and v.index < neighbor:
-                                vertices_to_contract.append((v.index, neighbor))
-        
-        if vertices_to_contract:
-            mapping = list(range(G_road_ig.vcount()))
-            for v1, v2 in vertices_to_contract:
-                if v1 < len(mapping) and v2 < len(mapping):
-                    mapping[max(v1, v2)] = min(v1, v2)
-            
-            try:
-                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
-                G_road_ig.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig = G_road_ig.simplify(
-                                    combine_edges={
-                                        "weight": "sum",   # sum weights of parallel edges
-                                        "length": "sum",   # sum lengths of parallel edges
-                                        # you can add other attributes here
-                                    }
-                                )
-            except Exception as e:
-                logger.debug(f"Failed to contract close vertices: {e}")
-        
         # Clean up edges far from stations before baseline analysis
         logger.info(
             "  Cleaning up edges far from gas stations from baseline road network..."
@@ -428,64 +264,11 @@ def main():
             knn_dist=knn_dist,
         )
 
-        # Convert and simplify graph for random comparison
-        G_road_ig_random = convert_networkx_to_igraph(G_road)
-        logger.info("  Simplifying and contracting graph for random-filtered analysis...")
-        G_road_ig_random.simplify(multiple=True, loops=True, combine_edges=dict(weight="mean"))
-        
-        # Contract vertices with degree 2 - recalculate after simplification
-        degree_2_vertices_random = [v.index for v in G_road_ig_random.vs if v.degree() == 2]
-        if degree_2_vertices_random:
-            mapping = list(range(G_road_ig_random.vcount()))
-            for v_idx in degree_2_vertices_random:
-                neighbors = G_road_ig_random.neighbors(v_idx)
-                if len(neighbors) >= 1:
-                    mapping[v_idx] = neighbors[0]
-            
-            try:
-                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
-                G_road_ig_random.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig_random.simplify(
-                                    combine_edges={
-                                        "weight": "sum",   # sum weights of parallel edges
-                                        "length": "sum",   # sum lengths of parallel edges
-                                    }
-                                )
-            except Exception as e:
-                logger.debug(f"Failed to contract degree-2 vertices: {e}")
-        
-        # Contract vertices that are very close to each other - recalculate again
-        CLUSTER_RADIUS = Config.CLUSTER_RADIUS  # meters
-        vertices_to_contract_random = []
-        
-        for v in G_road_ig_random.vs:
-            if 'x' in v.attributes() and 'y' in v.attributes():
-                for neighbor in G_road_ig_random.neighbors(v.index):
-                    if neighbor < len(G_road_ig_random.vs):
-                        neighbor_v = G_road_ig_random.vs[neighbor]
-                        if 'x' in neighbor_v.attributes() and 'y' in neighbor_v.attributes():
-                            dist = ((v['x'] - neighbor_v['x'])**2 + (v['y'] - neighbor_v['y'])**2)**0.5
-                            if dist < CLUSTER_RADIUS and v.index < neighbor:
-                                vertices_to_contract_random.append((v.index, neighbor))
-        
-        if vertices_to_contract_random:
-            mapping = list(range(G_road_ig_random.vcount()))
-            for v1, v2 in vertices_to_contract_random:
-                if v1 < len(mapping) and v2 < len(mapping):
-                    mapping[max(v1, v2)] = min(v1, v2)
-            
-            try:
-                combine_attrs = {"x": "mean", "y": "mean", "name": "first"}
-                G_road_ig_random.contract_vertices(mapping, combine_attrs=combine_attrs)
-                G_road_ig_random.simplify(
-                                    combine_edges={
-                                        "weight": "sum",   # sum weights of parallel edges
-                                        "length": "sum",   # sum lengths of parallel edges
-                                        # you can add other attributes here
-                                    }
-                                )
-            except Exception as e:
-                logger.debug(f"Failed to contract close vertices: {e}")
+        # Convert graph for random comparison
+        G_road_random_filtered = remove_stations_from_road_network(G_road, station_to_node_mapping, random_stations_to_remove)
+
+        G_road_ig_random = convert_networkx_to_igraph(G_road_random_filtered)
+
         logger.info(
             f"✓ Random-filtered road network: {G_road_ig_random.vcount()} nodes, {G_road_ig_random.ecount()} edges"
         )
@@ -690,15 +473,6 @@ def main():
         logger.info("📁 Output files saved:")
         
         # Update file descriptions to mention clustering
-        if 'cluster_id' in stations.columns:
-            logger.info(
-                f"   • all_gas_stations_{pbf_stem}.gpkg - All clustered gas stations from OpenStreetMap (within {Config.CLUSTER_RADIUS}m radius)"
-            )
-        else:
-            logger.info(
-                f"   • all_gas_stations_{pbf_stem}.gpkg - All extracted gas stations from OpenStreetMap"
-            )
-            
         logger.info(
             f"   • road_network_baseline_{pbf_stem}.gpkg - Complete road network with centrality measures"
         )

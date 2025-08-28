@@ -70,7 +70,7 @@ def get_knn_distance(G, weight=None, k=3):
     return G, knn_distances
 
 
-def farness_centrality(G, weight=None, n=None):
+def get_knn_dists(G, weight=None, n=None):
     logger.info(
         f"Computing farness centrality for graph with {G.vcount()} nodes and {G.ecount()} edges"
     )
@@ -82,35 +82,6 @@ def farness_centrality(G, weight=None, n=None):
     logger.debug(f"Using weight attribute: {weight}")
 
     # Use igraph's shortest path distances
-    logger.info("Calculating shortest path distances matrix...")
-    distances = G.distances()
-    logger.info("Distance matrix calculation completed")
-
-    for i in range(n):
-        # Sum of distances to all reachable nodes except itself
-        total_dist = sum(
-            dist
-            for j, dist in enumerate(distances[i])
-            if i != j and dist != float("inf")
-        )
-        farness[i] = total_dist
-        # Normalize by number of reachable nodes minus one (excluding itself)
-        reachable = sum(1 for dist in distances[i] if dist != float("inf")) - 1
-        norm_farness[i] = total_dist / reachable if reachable > 0 else 0
-
-        if i % max(1, n // 10) == 0:  # Log progress every 10%
-            logger.debug(f"Processed {i}/{n} nodes ({100 * i / n:.1f}%)")
-
-    # Add as vertex attributes
-    G.vs["farness"] = [farness.get(i, 0) for i in range(n)]
-    G.vs["norm_farness"] = [norm_farness.get(i, 0) for i in range(n)]
-
-    logger.info(
-        f"Farness centrality computation completed - "
-        f"Avg farness: {np.mean(list(farness.values())):.2f}, "
-        f"Max farness: {max(farness.values()):.2f}"
-    )
-
     G, knn_dist = get_knn_distance(G, weight, n)
 
     return G, knn_dist
