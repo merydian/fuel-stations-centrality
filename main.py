@@ -1,7 +1,7 @@
 import random
 
 from config import Config
-from centrality import nodes_highest_avg_knn_distance_nx
+from centrality import nodes_highest_avg_knn_distance_nx, graph_straightness
 from utils import (
     get_gas_stations_from_graph,
     convert_networkx_to_igraph,
@@ -61,6 +61,11 @@ def main():
     nx_nodes_to_gpkg(G_road, stations_to_remove, "knn")
     nx_nodes_to_gpkg(G_road, random_stations_to_remove, "random")
     nx_nodes_to_gpkg(G_road, stations, "all_stations")
+
+    print("Straightness Centrality:")
+    print(graph_straightness(G_road_ig))
+    print(graph_straightness(G_road_filtered_ig))
+    print(graph_straightness(G_road_ig_random_ig))
 
 
 if __name__ == "__main__":

@@ -44,29 +44,6 @@ def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_su
     return top_nodes
 
 
-
-def download_graph(place):
-    logger.info(f"Downloading street network for: {place}")
-    try:
-        # Download the street network for the given place and convert to igraph
-        G_nx = ox.graph_from_place(place, network_type="drive")
-        logger.info(
-            f"Downloaded NetworkX graph with {len(G_nx.nodes)} nodes and {len(G_nx.edges)} edges"
-        )
-
-        # Convert NetworkX to igraph
-        logger.info("Converting NetworkX graph to igraph...")
-        G = ig.Graph.from_networkx(G_nx)
-        logger.info(
-            f"Conversion completed. igraph has {G.vcount()} vertices and {G.ecount()} edges"
-        )
-
-        return G
-    except Exception as e:
-        logger.error(f"Failed to download graph for {place}: {e}")
-        raise
-
-
 @jit(nopython=True, cache=True)
 def _compute_straightness_core(coords_x, coords_y, shortest_paths, n):
     """
@@ -138,52 +115,6 @@ def _compute_graph_straightness_core(coords_x, coords_y, shortest_paths, n):
                 den += 1
 
     return num / den if den > 0 else 0.0
-
-
-def straightness_centrality(g: ig.Graph, weight: str = None):
-    """
-    Compute straightness centrality for all nodes in a graph.
-    Uses Numba JIT compilation for significant performance improvements.
-
-    Parameters
-    ----------
-    g : ig.Graph
-        Road network graph (undirected or directed). Each node must
-        have attributes "x" and "y".
-    weight : str or None
-        Edge attribute to use as distance (default = None for unweighted).
-
-    Returns
-    -------
-    straightness : list of floats
-        Straightness centrality for each node.
-    """
-    n = g.vcount()
-
-    if n == 0:
-        return []
-
-    logger.info(
-        f"Computing straightness centrality for {g.vcount():,} nodes and {g.ecount():,} edges using Numba JIT"
-    )
-
-    # Extract node coordinates as numpy arrays for Numba optimization
-    coords_x = np.array([v["x"] for v in g.vs], dtype=np.float64)
-    coords_y = np.array([v["y"] for v in g.vs], dtype=np.float64)
-
-    # Precompute all shortest path lengths as numpy array
-    logger.debug("Computing shortest paths...")
-    if weight and weight in g.es.attributes():
-        shortest_paths = np.array(g.distances(weights=weight), dtype=np.float64)
-    else:
-        shortest_paths = np.array(g.distances(), dtype=np.float64)
-
-    logger.debug("Computing straightness centrality...")
-
-    # Use optimized Numba implementation
-    straightness = _compute_straightness_core(coords_x, coords_y, shortest_paths, n)
-    return straightness.tolist()
-
 
 def graph_straightness(g: ig.Graph, weight: str = None):
     """
