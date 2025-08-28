@@ -370,7 +370,7 @@ def cluster_nearby_stations(stations_gdf, radius_meters=500):
     return clustered_gdf
 
 
-def get_gas_stations_from_graph():
+def get_gas_stations_from_graph(G):
     """
     Get gas stations within the area of a NetworkX graph from OSMnx.
     Uses unified projection logic from Config and clusters nearby stations.
@@ -389,51 +389,45 @@ def get_gas_stations_from_graph():
         tags = {"amenity": "fuel"}
         logger.info("Getting gas stations from OpenStreetMap PBF file...")
         gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, tags=tags)
-        logger.info(f"Downloaded {len(gas_stations)} gas station features")
+        logger.info(f"Got {len(gas_stations)} gas station features")
 
         # Use Config's unified projection logic
         gas_stations = Config.ensure_target_crs(gas_stations, "gas stations")
 
-        # Filter to only include valid geometries and convert to points
-        logger.debug("Processing gas station geometries...")
-        gas_points = []
+        if Config.MAX_STATIONS:
+            gas_stations = gas_stations.head(Config.MAX_STATIONS)
 
-        for idx, station in gas_stations.iterrows():
-            geom = station.geometry
-            if geom is not None and not geom.is_empty:
-                if geom.geom_type == "Point":
-                    gas_points.append(station)
-                elif hasattr(geom, "centroid"):
-                    # Convert polygons/multipolygons to centroids
-                    station_copy = station.copy()
-                    station_copy.geometry = geom.centroid
-                    gas_points.append(station_copy)
+        def get_xy(geom):
+            if geom.geom_type == "Point":
+                return geom.x, geom.y
+            else:  # Polygon or MultiPolygon
+                c = geom.centroid
+                return c.x, c.y
 
-        if gas_points:
-            gas_stations_gdf = gpd.GeoDataFrame(
-                gas_points, crs=Config.get_target_crs()
-            ).reset_index(drop=True)
-            logger.info(f"Successfully processed {len(gas_stations_gdf)} gas stations in CRS {Config.get_target_crs()}")
-            
-            # Cluster nearby stations within 500m radius
-            gas_stations_gdf = cluster_nearby_stations(gas_stations_gdf, radius_meters=500)
-            logger.info(f"Final clustered stations: {len(gas_stations_gdf)}")
-        else:
-            # Create empty GeoDataFrame with expected structure
-            gas_stations_gdf = gpd.GeoDataFrame(
-                columns=["geometry"], crs=Config.get_target_crs()
-            )
-            logger.warning("No valid gas stations found")
+        gas_stations["nearest_node"] = gas_stations.geometry.apply(
+            lambda geom: ox.distance.nearest_nodes(G, *get_xy(geom))
+        )
 
-        return gas_stations_gdf
+        return gas_stations["nearest_node"].tolist()
 
     except Exception as e:
         logger.error(f"Failed to extract gas stations: {e}")
         raise
 
+@njit
+def edges_far_from_stations(sp_matrix, edges, special_nodes, max_dist):
+    to_delete = []
+    for idx in range(edges.shape[0]):
+        u, v = edges[idx]
+        min_dist_u = np.min(sp_matrix[special_nodes, u])
+        min_dist_v = np.min(sp_matrix[special_nodes, v])
+        if min_dist_u > max_dist and min_dist_v > max_dist:
+            to_delete.append(idx)
+    return np.array(to_delete, dtype=np.int32)
+
 
 def remove_edges_far_from_stations_graph(
-    G, stations_gdf, max_distance, station_to_node_mapping=None
+    G, stations_gdf, max_distance
 ):
     """
     Remove edges that are farther than max_distance (network distance) 
@@ -1046,49 +1040,44 @@ def convert_networkx_to_igraph(G_nx):
     Returns:
         igraph.Graph with equivalent structure and preserved coordinates
     """
-    try:
-        import igraph as ig
+    import igraph as ig
 
-        logger.info("Converting NetworkX graph to igraph...")
-        logger.debug(f"Input graph CRS info: nodes have x,y coordinates in projected space")
+    logger.info("Converting NetworkX graph to igraph...")
+    logger.debug(f"Input graph CRS info: nodes have x,y coordinates in projected space")
 
-        # Create node mapping
-        node_list = list(G_nx.nodes())
-        node_to_idx = {node: idx for idx, node in enumerate(node_list)}
+    # Create node mapping
+    node_list = list(G_nx.nodes())
+    node_to_idx = {node: idx for idx, node in enumerate(node_list)}
 
-        # Create edges for igraph
-        edges = []
-        edge_weights = []
-        edge_lengths = []
+    # Create edges for igraph
+    edges = []
+    edge_weights = []
+    edge_lengths = []
 
-        for u, v, data in G_nx.edges(data=True):
-            edges.append((node_to_idx[u], node_to_idx[v]))
-            # Use 'length' attribute if available, fallback to 'weight', then 1.0
-            length = data.get("length", data.get("weight", 1.0))
-            edge_weights.append(length)
-            edge_lengths.append(length)
+    for u, v, data in G_nx.edges(data=True):
+        edges.append((node_to_idx[u], node_to_idx[v]))
+        # Use 'length' attribute if available, fallback to 'weight', then 1.0
+        length = data.get("length", data.get("weight", 1.0))
+        edge_weights.append(length)
+        edge_lengths.append(length)
 
-        # Create igraph
-        G_ig = ig.Graph(n=len(node_list), edges=edges, directed=False)
-        G_ig.es["weight"] = edge_weights
-        G_ig.es["length"] = edge_lengths
+    # Create igraph
+    G_ig = ig.Graph(n=len(node_list), edges=edges, directed=False)
+    G_ig.es["weight"] = edge_weights
+    G_ig.es["length"] = edge_lengths
 
-        # Add node attributes - preserve projected coordinates
-        for i, node in enumerate(node_list):
-            node_data = G_nx.nodes[node]
-            G_ig.vs[i]["name"] = str(node)
-            G_ig.vs[i]["x"] = float(node_data.get("x", 0.0))  # Projected x coordinate
-            G_ig.vs[i]["y"] = float(node_data.get("y", 0.0))  # Projected y coordinate
+    # Add node attributes - preserve projected coordinates
+    for i, node in enumerate(node_list):
+        node_data = G_nx.nodes[node]
+        G_ig.vs[i]["name"] = str(node)
+        G_ig.vs[i]["x"] = float(node_data.get("x", 0.0))  # Projected x coordinate
+        G_ig.vs[i]["y"] = float(node_data.get("y", 0.0))  # Projected y coordinate
 
-        logger.info(
-            f"✓ Converted NetworkX to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges"
-        )
-        logger.debug(f"Preserved projected coordinates in igraph node attributes")
-        return G_ig
-
-    except Exception as e:
-        logger.error(f"Error converting NetworkX to igraph: {e}")
-        return None
+    logger.info(
+        f"✓ Converted NetworkX to igraph: {G_ig.vcount()} nodes, {G_ig.ecount()} edges"
+    )
+    logger.debug(f"Preserved projected coordinates in igraph node attributes")
+    return G_ig
 
 @njit(parallel=True, cache=True)
 def _compute_station_distances_numba(road_nodes_array, n_stations, path_lengths_dict_keys, path_lengths_dict_values):
@@ -1134,196 +1123,11 @@ def _compute_station_distances_numba(road_nodes_array, n_stations, path_lengths_
 
 def make_graph_from_stations(
     stations: gpd.GeoDataFrame,
-    api_key: str = None,
-    profile: str = "driving-car",
-    use_ors: bool = True,
     G_road=None,
-    station_to_node_mapping: dict = None,
 ) -> ig.Graph:
-    """
-    Create a graph from stations using either OpenRouteService or road network distances.
+    pass
 
-    Parameters
-    ----------
-    stations : gpd.GeoDataFrame
-        GeoDataFrame containing fuel stations
-    api_key : str, optional
-        OpenRouteService API key (required if use_ors=True)
-    profile : str, optional
-        OpenRouteService routing profile (default: "driving-car")
-    use_ors : bool, optional
-        Whether to use OpenRouteService (True) or road network (False)
-    G_road : NetworkX Graph, optional
-        Road network graph (required if use_ors=False)
-    station_to_node_mapping : dict, optional
-        Mapping from station indices to road network nodes (required if use_ors=False)
-
-    Returns
-    -------
-    ig.Graph
-        igraph Graph with stations connected by calculated distances
-    """
-    if G_road is None or station_to_node_mapping is None:
-        raise ValueError(
-            "G_road and station_to_node_mapping are required when use_ors=False"
-        )
-    logger.info("Using road network for station distance calculation")
-    return make_graph_from_stations_via_road_network(
-        stations, G_road, station_to_node_mapping
-    )
-
-
-def make_graph_from_stations_via_road_network(
-    stations: gpd.GeoDataFrame,
-    G_road,
-    station_to_node_mapping: dict,
-) -> ig.Graph:
-    """
-    Create a graph from stations using distances calculated via the road network.
-    Uses unified projection logic from Config and Numba optimization for performance.
-
-    Parameters
-    ----------
-    stations : gpd.GeoDataFrame
-        GeoDataFrame containing fuel stations
-    G_road : NetworkX Graph
-        Road network graph (in target projected CRS)
-    station_to_node_mapping : dict
-        Mapping from station indices to road network node IDs
-
-    Returns
-    -------
-    ig.Graph
-        igraph Graph with stations connected by road network distances
-    """
-    logger.info(
-        f"Creating graph from {len(stations)} fuel stations using road network distances with Numba optimization"
-    )
-
-    if stations.empty:
-        logger.error("Stations GeoDataFrame is empty")
-        raise ValueError("Stations GeoDataFrame cannot be empty")
-
-    if len(stations) < 2:
-        logger.error(f"Insufficient stations: {len(stations)}")
-        raise ValueError("At least 2 stations are required")
-
-    # Use Config's unified projection logic
-    stations = Config.ensure_target_crs(stations, "stations for graph creation")
-
-    # Extract coordinates and valid station indices
-    locations = []
-    station_indices = []
-    road_nodes = []
-
-    for idx, station in stations.iterrows():
-        if idx in station_to_node_mapping:
-            geom = station.geometry
-            if geom is not None:
-                # Get centroid for non-point geometries
-                if hasattr(geom, "centroid"):
-                    point = geom.centroid
-                else:
-                    point = geom
-
-                # Store projected coordinates (guaranteed to be in target CRS)
-                locations.append((point.x, point.y))
-                station_indices.append(idx)
-                road_nodes.append(station_to_node_mapping[idx])
-
-    n = len(locations)
-    logger.info(f"Found {n} stations with valid road network mappings")
-
-    if n < 2:
-        raise ValueError("At least 2 valid station mappings are required")
-
-    # Calculate shortest path distances between all station pairs using road network
-    logger.info("Computing shortest path distances via road network with Numba acceleration...")
-    
-    try:
-        import networkx as nx
-        # For larger graphs, use optimized approach
-        logger.debug("Using Numba-optimized approach for large graph")
-        
-        # Pre-compute all shortest paths from station nodes
-        all_path_lengths = {}
-        for i, source_node in enumerate(road_nodes):
-            if source_node in G_road:
-                try:
-                    path_lengths = nx.single_source_dijkstra_path_length(
-                        G_road, source_node, weight="length"
-                    )
-                    all_path_lengths[i] = path_lengths
-                except nx.NetworkXNoPath:
-                    all_path_lengths[i] = {}
-                    
-            if (i + 1) % max(1, n // 10) == 0:
-                logger.debug(f"Pre-computed paths from {i + 1}/{n} stations")
-        
-        # Convert to Numba-compatible format for distance matrix computation
-        distances = np.full((n, n), np.inf)
-        
-        # Optimized distance matrix filling using vectorized operations
-        road_nodes_array = np.array(road_nodes, dtype=np.int64)
-        
-        # Compute distances using Numba-optimized function
-        distances = _compute_station_distances_numba(
-            road_nodes_array, n, 
-            np.array(list(all_path_lengths.keys())), 
-            np.array([v for d in all_path_lengths.values() for v in d.values()])
-        )
-
-    except Exception as e:
-        logger.error(f"Failed to compute road network distances: {e}")
-        raise
-
-    logger.info("Road network distance calculation completed")
-
-    # Create igraph Graph
-    logger.info("Creating igraph directed graph...")
-    G = ig.Graph(directed=True)
-
-    # Add vertices
-    G.add_vertices(n)
-    logger.debug(f"Added {n} vertices to graph")
-
-    # Set coordinates as vertex attributes (projected coordinates)
-    for idx, coord in enumerate(locations):
-        G.vs[idx]["x"] = coord[0]  # Projected x coordinate
-        G.vs[idx]["y"] = coord[1]  # Projected y coordinate
-        G.vs[idx]["station_id"] = station_indices[idx]  # Original station index
-        G.vs[idx]["road_node"] = road_nodes[idx]  # Corresponding road network node
-
-    # Add edges with distances
-    logger.info("Adding edges with distance weights...")
-    edges = []
-    weights = []
-    lengths = []
-    finite_edges = 0
-
-    for i in range(n):
-        for j in range(n):
-            if i != j:
-                edges.append((i, j))
-                weight = distances[i, j]
-                weights.append(weight)
-                lengths.append(weight)
-                if weight != np.inf:
-                    finite_edges += 1
-
-    G.add_edges(edges)
-    G.es["weight"] = weights
-    G.es["length"] = lengths
-
-    logger.info(
-        f"Graph creation completed: {G.vcount()} vertices, {G.ecount()} edges "
-        f"({finite_edges} with finite weights, {G.ecount() - finite_edges} infinite)"
-    )
-
-    return G
-
-
-def process_fuel_stations(stations, max_stations=None):
+def restict_n_of_fuel_stations(stations, max_stations=None):
     """Process and validate fuel stations data."""
     logger = logging.getLogger(__name__)
 
