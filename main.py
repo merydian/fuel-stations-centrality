@@ -1,11 +1,7 @@
 """
 Enhanced main module with improved error handling and code structure.
 """
-
-import time
-import sys
 import random
-from datetime import datetime
 
 from config import Config
 from centrality import get_knn_dists
