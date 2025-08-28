@@ -20,7 +20,7 @@ class Config:
 
     # Graph sampling parameter
     SAMPLE_NODES = (
-        5_000  # Number of nodes to sample from road network (None = no sampling)
+        100_000  # Number of nodes to sample from road network (None = no sampling)
     )
 
     # Data limits
