@@ -23,13 +23,9 @@ def main():
     G_road = ox.load_graphml(road_filepath)
     G_road.remove_edges_from(nx.selfloop_edges(G_road))
 
-    G_road_ig = convert_networkx_to_igraph(G_road)
-
     stations = get_gas_stations_from_graph(G_road)
 
     stations_to_remove = nodes_highest_avg_knn_distance_nx(G_road, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations)
-
-    assert G_road_ig is not None
 
     G_road_filtered = G_road.copy()
     G_road_filtered.remove_nodes_from(stations_to_remove)
@@ -59,6 +55,7 @@ def main():
 
     igraph_edges_to_gpkg(G_road_ig_random_ig, "random")
     igraph_edges_to_gpkg(G_road_filtered_ig, "knn")
+    G_road_ig = convert_networkx_to_igraph(G_road)
     igraph_edges_to_gpkg(G_road_ig, "base")
 
     nx_nodes_to_gpkg(G_road, stations_to_remove, "knn")
