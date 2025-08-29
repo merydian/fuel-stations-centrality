@@ -35,7 +35,9 @@ FILTERED_PBF="${FILENAME%.osm.pbf}_filtered.osm.pbf"
 log "Filtering highways to $FILTERED_PBF"
 osmium tags-filter "$FILENAME" \
     w/highway=motorway,trunk,primary,secondary,tertiary \
-    n,way,relation/amenity=fuel \
+    n/amenity=fuel \
+    w/amenity=fuel \
+    r/amenity=fuel \
     -o "$FILTERED_PBF" \
     || error_exit "Osmium filtering failed"
 
