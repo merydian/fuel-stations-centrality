@@ -26,17 +26,19 @@ def main():
 
     print("Extracting gas stations from OSM...")
     stations = get_gas_stations_from_graph(G_road)
+    print(stations)
 
     print(f"Total gas stations found: {len(stations)}")
     print(f"Removing {Config.N_REMOVE} gas stations based on highest avg {Config.K_NN}-NN distance...")
     stations_to_remove = nodes_highest_avg_knn_distance_nx(G_road, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations)
+    print(f"Stations to remove: {stations_to_remove}")
 
     G_road_filtered = G_road.copy()
-    print(f"Removing stations: {stations_to_remove}")
     G_road_filtered.remove_nodes_from(stations_to_remove)
+    print(f"Before removal - stations: {len(stations)}")
     print(f"Remaining stations: {len(stations) - len(stations_to_remove)}")
-    print(f"Remaining nodes in graph: {len(G_road_filtered.nodes)}")
-    print(f"Remaining edges in graph: {len(G_road_filtered.edges)}")
+    print(f"Before removal - nodes: {len(G_road.nodes)}, edges: {len(G_road.edges)}")
+    print(f"After removal - nodes: {len(G_road_filtered.nodes)}, edges: {len(G_road_filtered.edges)}")
     print("Converting graphs to igraph format for centrality calculations...")
     G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
     ig_indices = [
@@ -47,9 +49,7 @@ def main():
 
     random.seed(Config.RANDOM_SEED)
     print(f"Selecting {Config.N_REMOVE} random stations to remove...")
-    random_stations_to_remove = random.sample(
-        stations, min(Config.N_REMOVE, len(stations))
-    )
+    random_stations_to_remove = random.sample(stations, Config.N_REMOVE)
     assert random_stations_to_remove != stations_to_remove
 
     G_road_ig_random = G_road.copy()

@@ -27,6 +27,7 @@ def get_gas_stations_from_graph(G):
         tags = {"amenity": "fuel"}
         logger.info("Getting gas stations from OpenStreetMap PBF file...")
         gas_stations = ox.features_from_xml(Config.LOCAL_PBF_PATH, tags=tags)
+        gas_stations = gas_stations.to_crs(G.graph["crs"])
         logger.info(f"Got {len(gas_stations)} gas station features")
 
         if Config.MAX_STATIONS:
@@ -42,6 +43,8 @@ def get_gas_stations_from_graph(G):
         gas_stations["nearest_node"] = gas_stations.geometry.apply(
             lambda geom: ox.distance.nearest_nodes(G, *get_xy(geom))
         )
+
+        assert len(set(gas_stations["nearest_node"].tolist())) > 1
 
         return gas_stations["nearest_node"].tolist()
 
