@@ -1,16 +1,9 @@
 #!/bin/bash
 
-# Default region
-REGION="${1:-turkmenistan}"
+curl -O "https://download.geofabrik.de/asia/mongolia-latest.osm.pbf"
 
-echo "Downloading and converting OSM data for: $REGION"
-echo "URL: https://download.geofabrik.de/asia/${REGION}-latest.osm.pbf"
-cd data || exit 1
+osmium tags-filter "mongolia-latest.osm.pbf" w/highway=motorway,trunk,primary,secondary,tertiary,residential -o "mongolia-latest_filtered.osm.pbf"
 
-curl -O "https://download.geofabrik.de/asia/${REGION}-latest.osm.pbf"
-osmium cat "${REGION}-latest.osm.pbf" -o "${REGION}-latest.osm"
+osmium cat "mongolia-latest.osm.pbf" -o "mongolia-latest.osm"
 
-echo "Copying converted OSM data to remote server..."
-scp "${REGION}-latest.osm" helix:ma/fuel-stations-centrality/data/
-
-echo "Download and conversion complete for $REGION"
+scp "mongolia-latest.osm" helix:ma/fuel-stations-centrality/data/

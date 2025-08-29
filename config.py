@@ -9,7 +9,7 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Guyana"
+    PLACE = "Mongolia"
     MAX_DISTANCE = 100_000
     N_REMOVE = 80
     K_NN = 8
@@ -36,7 +36,7 @@ class Config:
     CACHE_DIR = Path("cache")
 
     # Coordinate Reference System (CRS) configuration
-    EPSG_CODE = 32621  # Target projected CRS for analysis
+    EPSG_CODE = 32650  # Target projected CRS for analysis
 
     @classmethod
     def get_target_crs(cls):
