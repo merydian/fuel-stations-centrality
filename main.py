@@ -105,9 +105,11 @@ def main():
         closeness = graph.closeness()
         betweenness = graph.betweenness()
         degree = graph.degree()
+        straightness = graph_straightness(graph)
         logger.info(f"{name} - Closeness (avg): {sum(closeness)/len(closeness):.4f}")
         logger.info(f"{name} - Betweenness (avg): {sum(betweenness)/len(betweenness):.4f}")
         logger.info(f"{name} - Degree (avg): {sum(degree)/len(degree):.4f}")
+        logger.info(f"{name} - Straightness (avg): {straightness:.4f}")
 
     end = time.time()
     elapsed = end - start
