@@ -121,4 +121,4 @@ def main():
 if __name__ == "__main__":
     logger.info("Starting fuel station centrality analysis...")
     main()
-    print("Analysis complete.")
+    logger.info("Analysis complete.")
