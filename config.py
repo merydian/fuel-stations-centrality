@@ -9,13 +9,13 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Mauritania"
+    PLACE = "Mongolia"
     MAX_DISTANCE = 100_000
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mauritania-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mongolia-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Graph sampling parameter
@@ -36,7 +36,7 @@ class Config:
     CACHE_DIR = Path("cache")
 
     # Coordinate Reference System (CRS) configuration
-    EPSG_CODE = 32628  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
+    EPSG_CODE = 32648  # Target projected CRS for analysis (UTM Zone 48N for Mongolia)
 
     @classmethod
     def get_target_crs(cls):
