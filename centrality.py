@@ -1,8 +1,7 @@
 import igraph as ig
-import osmnx as ox
+import centrality_core
 import numpy as np
 import logging
-from numba import jit, prange, njit
 
 logger = logging.getLogger(__name__)
 
@@ -42,79 +41,6 @@ def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_su
     top_nodes = [node for node, _ in avg_distances[:n]]
     return top_nodes
 
-
-@jit(nopython=True, cache=True)
-def _compute_straightness_core(coords_x, coords_y, shortest_paths, n):
-    """
-    Numba-optimized core computation for straightness centrality.
-
-    Parameters
-    ----------
-    coords_x : numpy.ndarray
-        X coordinates of all nodes
-    coords_y : numpy.ndarray
-        Y coordinates of all nodes
-    shortest_paths : numpy.ndarray
-        2D array of shortest path distances between all node pairs
-    n : int
-        Number of nodes
-
-    Returns
-    -------
-    numpy.ndarray
-        Straightness centrality values for all nodes
-    """
-    straightness = np.zeros(n, dtype=np.float64)
-
-    for i in range(n):
-        si = 0.0
-        valid = 0
-        xi, yi = coords_x[i], coords_y[i]
-
-        for j in range(n):
-            if i == j:
-                continue
-
-            d_g = shortest_paths[i, j]
-            if d_g == np.inf:
-                continue  # disconnected
-
-            xj, yj = coords_x[j], coords_y[j]
-            d_e = np.sqrt((xi - xj) ** 2 + (yi - yj) ** 2)
-
-            if d_e > 0:
-                si += d_e / d_g
-                valid += 1
-
-        straightness[i] = si / valid if valid > 0 else 0.0
-
-    return straightness
-
-
-@njit(parallel=True, fastmath=True)
-def _compute_graph_straightness_core(coords_x, coords_y, shortest_paths, n):
-    num = 0.0
-    den = 0
-
-    for i in prange(n):  # parallel loop
-        xi, yi = coords_x[i], coords_y[i]
-        for j in range(n):
-            if i == j:
-                continue
-
-            d_g = shortest_paths[i, j]
-            if d_g == np.inf:
-                continue
-
-            xj, yj = coords_x[j], coords_y[j]
-            d_e = np.sqrt((xi - xj) ** 2 + (yi - yj) ** 2)
-
-            if d_e > 0:
-                num += d_e / d_g
-                den += 1
-
-    return num / den if den > 0 else 0.0
-
 def graph_straightness(g: ig.Graph, weight: str = None):
     """
     Compute global straightness centrality for a graph.
@@ -153,4 +79,4 @@ def graph_straightness(g: ig.Graph, weight: str = None):
 
     logger.debug("Computing global straightness...")
 
-    return _compute_graph_straightness_core(coords_x, coords_y, shortest_paths, n)
+    return centrality_core.graph_centrality(coords_x, coords_y, shortest_paths, n)
