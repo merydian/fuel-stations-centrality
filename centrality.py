@@ -65,7 +65,8 @@ def graph_straightness(g: ig.Graph, weight: str = None):
     if n == 0:
         return 0.0
 
-    logger.info(f"Computing global graph straightness for {n} nodes using 'Numba JIT'")
+    m = g.ecount()
+    logger.info(f"Computing global graph straightness for {n} nodes and {m} edges using 'Numba JIT'")
 
     # Extract node coordinates as numpy arrays for Numba optimization
     coords_x = np.array([v["x"] for v in g.vs], dtype=np.float64)
