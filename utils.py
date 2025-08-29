@@ -44,6 +44,17 @@ def get_gas_stations_from_graph(G):
             lambda geom: ox.distance.nearest_nodes(G, *get_xy(geom))
         )
 
+        # Remove stations further than Config.STATIONS_MAX_RADIUS from their nearest node
+        def node_distance(row):
+            node = row["nearest_node"]
+            geom = row.geometry
+            node_x = G.nodes[node]["x"]
+            node_y = G.nodes[node]["y"]
+            return Point(node_x, node_y).distance(geom)
+
+        gas_stations["node_dist"] = gas_stations.apply(node_distance, axis=1)
+        gas_stations = gas_stations[gas_stations["node_dist"] <= Config.STATIONS_MAX_RADIUS]
+
         assert len(set(gas_stations["nearest_node"].tolist())) > 1
 
         return gas_stations["nearest_node"].tolist()

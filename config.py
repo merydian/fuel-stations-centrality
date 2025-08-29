@@ -14,6 +14,7 @@ class Config:
     N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
+    STATIONS_MAX_RADIUS = 500  # Maximum radius for gas stations to network (in meters)
 
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / f"{PLACE.lower()}-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
