@@ -113,7 +113,7 @@ def igraph_edges_to_gpkg(g, name):
                 for e in edges],
         crs=f"EPSG:{Config.EPSG_CODE}"
     )
-    edge_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_edges.gpkg", layer=name, driver="GPKG")
+    edge_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_{Config.PLACE.lower()}_edges.gpkg", layer=name, driver="GPKG")
 
 def nx_nodes_to_gpkg(G, selected_nodes, name):
     """
