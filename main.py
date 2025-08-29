@@ -100,10 +100,14 @@ def main():
         "Randomized Road Graph": G_road_ig_random_ig
     }
 
-    logger.info("=== Straightness Centrality ===")
+    logger.info("=== Centrality Measures ===")
     for name, graph in graphs.items():
-        centrality = graph_straightness(graph)
-        logger.info(f"{name}: {centrality:.4f}")  # rounds to 4 decimal places
+        closeness = graph.closeness()
+        betweenness = graph.betweenness()
+        degree = graph.degree()
+        logger.info(f"{name} - Closeness (avg): {sum(closeness)/len(closeness):.4f}")
+        logger.info(f"{name} - Betweenness (avg): {sum(betweenness)/len(betweenness):.4f}")
+        logger.info(f"{name} - Degree (avg): {sum(degree)/len(degree):.4f}")
 
     end = time.time()
     elapsed = end - start
