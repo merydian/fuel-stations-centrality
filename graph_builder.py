@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 logger.info(f"Using local PBF file: {Config.LOCAL_PBF_PATH}")
 logger.info("Loading road network from PBF...")
 G_road = ox.graph_from_xml(Config.LOCAL_PBF_PATH, simplify=Config.SIMPLIFY_ROAD_NETWORK)
+G_road = ox.utils_graph.remove_non_drivable(G_road)
 
 # Check initial CRS
 initial_crs = None
