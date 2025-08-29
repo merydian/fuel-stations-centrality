@@ -33,7 +33,9 @@ curl -L -o "$FILENAME" "$URL" || error_exit "Download failed"
 # Filter highways and write PBF (overwrite if exists)
 FILTERED_PBF="${FILENAME%.osm.pbf}_filtered.osm.pbf"
 log "Filtering highways to $FILTERED_PBF"
-osmium tags-filter "$FILENAME" w/highway=motorway,trunk,primary -o "$FILTERED_PBF" -f pbf --overwrite \
+osmium tags-filter "$FILENAME"w/highway=motorway,trunk,primary,secondary,tertiary \
+    n,way,relation/amenity=fuel \ 
+    -o "$FILTERED_PBF" -f pbf --overwrite \
     || error_exit "Osmium filtering failed"
 
 # Convert filtered PBF to XML (overwrite if exists)
