@@ -9,18 +9,18 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Cook"
+    PLACE = "Mauritania"
     MAX_DISTANCE = 100_000
-    N_REMOVE = 2
+    N_REMOVE = 80
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "cook-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "mauritania-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Graph sampling parameter
     SAMPLE_NODES = (
-        100_000  # Number of nodes to sample from road network (None = no sampling)
+        50_000  # Number of nodes to sample from road network (None = no sampling)
     )
 
     # Data limits
