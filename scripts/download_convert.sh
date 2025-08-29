@@ -38,7 +38,7 @@ osmium tags-filter "$FILENAME" \
     n/amenity=fuel \
     w/amenity=fuel \
     r/amenity=fuel \
-    -o "$FILTERED_PBF" \
+    -o "$FILTERED_PBF" --overwrite \
     || error_exit "Osmium filtering failed"
 
 # Convert filtered PBF to XML (overwrite if exists)
