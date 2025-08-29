@@ -1,5 +1,5 @@
 import igraph as ig
-import centrality_core
+# import centrality_core
 import numpy as np
 import logging
 
@@ -7,6 +7,7 @@ logger = logging.getLogger(__name__)
 
 import networkx as nx
 import numpy as np
+from numba import jit, prange, njit
 
 def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_subset=None):
     """
@@ -79,9 +80,30 @@ def graph_straightness(g: ig.Graph, weight: str = None):
 
     logger.debug("Computing global straightness...")
 
-    n = coords_x.shape[0]
-    flat_shortest_paths = shortest_paths.ravel()  # converts (n,n) → (n*n,)
-
-    return centrality_core.graph_centrality(
-        coords_x, coords_y, flat_shortest_paths, n
+    return _compute_graph_straightness_core(
+        coords_x, coords_y, shortest_paths, n
     )
+
+@njit(parallel=True, fastmath=True)
+def _compute_graph_straightness_core(coords_x, coords_y, shortest_paths, n):
+    num = 0.0
+    den = 0
+
+    for i in prange(n):  # parallel loop
+        xi, yi = coords_x[i], coords_y[i]
+        for j in range(n):
+            if i == j:
+                continue
+
+            d_g = shortest_paths[i, j]
+            if d_g == np.inf:
+                continue
+
+            xj, yj = coords_x[j], coords_y[j]
+            d_e = np.sqrt((xi - xj) ** 2 + (yi - yj) ** 2)
+
+            if d_e > 0:
+                num += d_e / d_g
+                den += 1
+
+    return num / den if den > 0 else 0.0

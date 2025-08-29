@@ -12,6 +12,17 @@ import osmnx as ox
 import networkx as nx
 import time
 import logging
+import sys
+
+# Configure logging at the very beginning
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),  # Print to console
+        logging.FileHandler('fuel_stations_analysis.log')  # Also save to file
+    ]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +110,8 @@ def main():
     hours, rem = divmod(elapsed, 3600)
     minutes, seconds = divmod(rem, 60)
     logger.info(f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
-    logger.info("Nodes:", G_road_ig.vcount())
-    logger.info("Edges:", G_road_ig.ecount())
+    logger.info(f"Nodes: {G_road_ig.vcount()}")
+    logger.info(f"Edges: {G_road_ig.ecount()}")
 
 
 if __name__ == "__main__":
