@@ -112,6 +112,7 @@ def main():
     logger.info(f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
     logger.info(f"Nodes: {G_road_ig.vcount()}")
     logger.info(f"Edges: {G_road_ig.ecount()}")
+    print("Analysis complete.")
 
 
 if __name__ == "__main__":
