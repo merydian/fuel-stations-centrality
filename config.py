@@ -15,7 +15,7 @@ class Config:
     K_NN = 8
     REMOVAL_KIND = "knn_dist"
 
-    LOCAL_PBF_PATH = Path(__file__).parent / "data" / "guyana-latest.osm"
+    LOCAL_PBF_PATH = Path(__file__).parent / "data" / f"{PLACE.lower()}-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
     # Graph sampling parameter
