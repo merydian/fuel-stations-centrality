@@ -26,7 +26,6 @@ def main():
 
     print("Extracting gas stations from OSM...")
     stations = get_gas_stations_from_graph(G_road)
-    print(stations)
 
     print(f"Total gas stations found: {len(stations)}")
     print(f"Removing {Config.N_REMOVE} gas stations based on highest avg {Config.K_NN}-NN distance...")

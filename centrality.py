@@ -35,9 +35,6 @@ def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_su
         # Take knn smallest distances
         knn_dists = sorted(lengths.values())[:knn]
         avg_distances.append((node, np.mean(knn_dists)))
-    print()
-    print(avg_distances)
-    print()
 
     # Sort by average distance descending and take top n
     avg_distances.sort(key=lambda x: x[1], reverse=True)
@@ -82,4 +79,9 @@ def graph_straightness(g: ig.Graph, weight: str = None):
 
     logger.debug("Computing global straightness...")
 
-    return centrality_core.graph_centrality(coords_x, coords_y, shortest_paths, n)
+    n = coords_x.shape[0]
+    flat_shortest_paths = shortest_paths.ravel()  # converts (n,n) → (n*n,)
+
+    return centrality_core.graph_centrality(
+        coords_x, coords_y, flat_shortest_paths, n
+    )
