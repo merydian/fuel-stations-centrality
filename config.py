@@ -12,7 +12,7 @@ class Config:
     PLACE = "Mongolia"
     MAX_DISTANCE = 100_000
     N_REMOVE = 80
-    K_NN = 8
+    K_NN = 1
     REMOVAL_KIND = "knn_dist"
     STATIONS_MAX_RADIUS = 500  # Maximum radius for gas stations to network (in meters)
 
