@@ -172,7 +172,7 @@ def prune_graph_by_distance(G: nx.Graph, stations: list, max_dist: int) -> nx.Gr
     """
 
     # Compute shortest path length from all stations (multi-source BFS)
-    lengths = nx.multi_source_dijkstra_path_length(G, sources=stations, cutoff=max_dist)
+    lengths = nx.multi_source_dijkstra_path_length(G, sources=stations, cutoff=max_dist, weight="length")
 
     # Keep only nodes within `max_dist` of a station
     valid_nodes = set(lengths.keys())
