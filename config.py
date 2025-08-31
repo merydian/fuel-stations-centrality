@@ -9,7 +9,7 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Mongolia"
+    PLACE = "Iran"
     MAX_DISTANCE = 100_000
     N_REMOVE = 80
     K_NN = 1
