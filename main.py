@@ -8,6 +8,7 @@ from utils import (
     igraph_edges_to_gpkg,
     nx_nodes_to_gpkg,
 )
+from utils import prune_graph_by_distance
 import osmnx as ox
 import networkx as nx
 import time
@@ -47,6 +48,9 @@ def main():
 
     G_road_filtered_nx = G_road_nx.copy()
     G_road_filtered_nx.remove_nodes_from(stations_knn_nx)
+    remaining_stations = set(stations_nx) - set(stations_knn_nx)
+    logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph...")
+    G_road_filtered_nx = prune_graph_by_distance(G_road_filtered_nx, remaining_stations, Config.MAX_DISTANCE)
     logger.info(f"Before removal - stations: {len(stations_nx)}")
     logger.info(f"Remaining stations: {len(stations_nx) - len(stations_knn_nx)}")
     logger.info(f"Before removal - nodes: {len(G_road_nx.nodes)}, edges: {len(G_road_nx.edges)}")
@@ -64,27 +68,30 @@ def main():
     random_stations_nx = random.sample(stations_nx, Config.N_REMOVE)
     assert random_stations_nx != stations_knn_nx
 
-    G_road_ig_random = G_road_nx.copy()
+    G_road_random_nx = G_road_nx.copy()
     logger.info(f"Removing random stations: {random_stations_nx}")
-    G_road_ig_random.remove_nodes_from(random_stations_nx)
+    G_road_random_nx.remove_nodes_from(random_stations_nx)
+    remaining_stations = set(stations_nx) - set(random_stations_nx)
+    logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph...")
+    G_road_random_nx = prune_graph_by_distance(G_road_random_nx, remaining_stations, Config.MAX_DISTANCE)
     logger.info(f"Remaining stations: {len(stations_nx) - len(random_stations_nx)}")
-    logger.info(f"Remaining nodes in graph: {len(G_road_ig_random.nodes)}")
-    logger.info(f"Remaining edges in graph: {len(G_road_ig_random.edges)}")
+    logger.info(f"Remaining nodes in graph: {len(G_road_random_nx.nodes)}")
+    logger.info(f"Remaining edges in graph: {len(G_road_random_nx.edges)}")
     logger.info("Converting graphs to igraph format for centrality calculations...")
-    G_road_ig_random_ig = convert_networkx_to_igraph(G_road_ig_random)
+    G_road_random_ig = convert_networkx_to_igraph(G_road_random_nx)
     ig_indices = [
         v.index
-        for v in G_road_ig_random_ig.vs
+        for v in G_road_random_ig.vs
         if v["name"] in random_stations_nx
     ]
     logger.info(f"Deleting {len(ig_indices)} vertices corresponding to removed stations...")
-    G_road_ig_random_ig.delete_vertices(ig_indices)
+    G_road_random_ig.delete_vertices(ig_indices)
 
-    assert G_road_ig_random_ig is not None
+    assert G_road_random_ig is not None
     assert G_road_filtered_ig is not None
 
     logger.info(f"Exporting igraph edges to GeoPackage...")
-    igraph_edges_to_gpkg(G_road_ig_random_ig, "random")
+    igraph_edges_to_gpkg(G_road_random_ig, "random")
     igraph_edges_to_gpkg(G_road_filtered_ig, "knn")
     G_road_ig = convert_networkx_to_igraph(G_road_nx)
     igraph_edges_to_gpkg(G_road_ig, "base")
@@ -97,7 +104,7 @@ def main():
     graphs = {
         "Original Road Graph": G_road_ig,
         "Filtered Road Graph": G_road_filtered_ig,
-        "Randomized Road Graph": G_road_ig_random_ig
+        "Randomized Road Graph": G_road_random_ig
     }
 
     logger.info("=== Centrality Measures ===")

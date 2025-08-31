@@ -3,6 +3,7 @@ import osmnx as ox
 from config import Config
 from shapely.geometry import LineString, Point
 import geopandas as gpd
+import networkx as nx
 
 
 logger = logging.getLogger(__name__)
@@ -148,3 +149,39 @@ def nx_nodes_to_gpkg(G, selected_nodes, name):
 
     node_gdf = gpd.GeoDataFrame(node_attrs, geometry=geometries, crs=f"EPSG:{Config.EPSG_CODE}")
     node_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_nodes.gpkg", layer=name, driver="GPKG")
+
+
+def prune_graph_by_distance(G: nx.Graph, stations: list, max_dist: int) -> nx.Graph:
+    """
+    Remove edges from G that are further than `max_dist` graph-distance 
+    away from any node in `stations`.
+
+    Parameters
+    ----------
+    G : nx.Graph
+        The input graph (modified in-place).
+    stations : list
+        List of station nodes.
+    max_dist : int
+        Maximum allowed graph distance from any station.
+
+    Returns
+    -------
+    nx.Graph
+        The pruned graph (same object as G).
+    """
+
+    # Compute shortest path length from all stations (multi-source BFS)
+    lengths = nx.multi_source_dijkstra_path_length(G, sources=stations, cutoff=max_dist)
+
+    # Keep only nodes within `max_dist` of a station
+    valid_nodes = set(lengths.keys())
+
+    # Remove edges where both ends are outside the valid set
+    edges_to_remove = [
+        (u, v) for u, v in G.edges()
+        if u not in valid_nodes or v not in valid_nodes
+    ]
+    G.remove_edges_from(edges_to_remove)
+
+    return G
