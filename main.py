@@ -34,40 +34,40 @@ def main():
 
     road_filepath = Config.get_road_filepath()
     logger.info(f"Loading road network from {road_filepath}")
-    G_road = ox.load_graphml(road_filepath)
-    G_road.remove_edges_from(nx.selfloop_edges(G_road))
+    G_road_nx = ox.load_graphml(road_filepath)
+    G_road_nx.remove_edges_from(nx.selfloop_edges(G_road_nx))
 
     logger.info("Extracting gas stations from OSM...")
-    stations = get_gas_stations_from_graph(G_road)
+    stations_nx = get_gas_stations_from_graph(G_road_nx)
 
-    logger.info(f"Total gas stations found: {len(stations)}")
+    logger.info(f"Total gas stations found: {len(stations_nx)}")
     logger.info(f"Removing {Config.N_REMOVE} gas stations based on highest avg {Config.K_NN}-NN distance...")
-    stations_to_remove = nodes_highest_avg_knn_distance_nx(G_road, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations)
-    logger.info(f"Stations to remove: {stations_to_remove}")
+    stations_knn_nx = nodes_highest_avg_knn_distance_nx(G_road_nx, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations_nx)
+    logger.info(f"Stations to remove: {stations_knn_nx}")
 
-    G_road_filtered = G_road.copy()
-    G_road_filtered.remove_nodes_from(stations_to_remove)
-    logger.info(f"Before removal - stations: {len(stations)}")
-    logger.info(f"Remaining stations: {len(stations) - len(stations_to_remove)}")
-    logger.info(f"Before removal - nodes: {len(G_road.nodes)}, edges: {len(G_road.edges)}")
-    logger.info(f"After removal - nodes: {len(G_road_filtered.nodes)}, edges: {len(G_road_filtered.edges)}")
+    G_road_filtered_nx = G_road_nx.copy()
+    G_road_filtered_nx.remove_nodes_from(stations_knn_nx)
+    logger.info(f"Before removal - stations: {len(stations_nx)}")
+    logger.info(f"Remaining stations: {len(stations_nx) - len(stations_knn_nx)}")
+    logger.info(f"Before removal - nodes: {len(G_road_nx.nodes)}, edges: {len(G_road_nx.edges)}")
+    logger.info(f"After removal - nodes: {len(G_road_filtered_nx.nodes)}, edges: {len(G_road_filtered_nx.edges)}")
     logger.info("Converting graphs to igraph format for centrality calculations...")
-    G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered)
+    G_road_filtered_ig = convert_networkx_to_igraph(G_road_filtered_nx)
     ig_indices = [
-        v.index for v in G_road_filtered_ig.vs if v["name"] in stations_to_remove
+        v.index for v in G_road_filtered_ig.vs if v["name"] in stations_knn_nx
     ]
     logger.info(f"Deleting {len(ig_indices)} vertices corresponding to removed stations...")
     G_road_filtered_ig.delete_vertices(ig_indices)
 
     random.seed(Config.RANDOM_SEED)
     logger.info(f"Selecting {Config.N_REMOVE} random stations to remove...")
-    random_stations_to_remove = random.sample(stations, Config.N_REMOVE)
-    assert random_stations_to_remove != stations_to_remove
+    random_stations_nx = random.sample(stations_nx, Config.N_REMOVE)
+    assert random_stations_nx != stations_knn_nx
 
-    G_road_ig_random = G_road.copy()
-    logger.info(f"Removing random stations: {random_stations_to_remove}")
-    G_road_ig_random.remove_nodes_from(random_stations_to_remove)
-    logger.info(f"Remaining stations: {len(stations) - len(random_stations_to_remove)}")
+    G_road_ig_random = G_road_nx.copy()
+    logger.info(f"Removing random stations: {random_stations_nx}")
+    G_road_ig_random.remove_nodes_from(random_stations_nx)
+    logger.info(f"Remaining stations: {len(stations_nx) - len(random_stations_nx)}")
     logger.info(f"Remaining nodes in graph: {len(G_road_ig_random.nodes)}")
     logger.info(f"Remaining edges in graph: {len(G_road_ig_random.edges)}")
     logger.info("Converting graphs to igraph format for centrality calculations...")
@@ -75,7 +75,7 @@ def main():
     ig_indices = [
         v.index
         for v in G_road_ig_random_ig.vs
-        if v["name"] in random_stations_to_remove
+        if v["name"] in random_stations_nx
     ]
     logger.info(f"Deleting {len(ig_indices)} vertices corresponding to removed stations...")
     G_road_ig_random_ig.delete_vertices(ig_indices)
@@ -86,13 +86,13 @@ def main():
     logger.info(f"Exporting igraph edges to GeoPackage...")
     igraph_edges_to_gpkg(G_road_ig_random_ig, "random")
     igraph_edges_to_gpkg(G_road_filtered_ig, "knn")
-    G_road_ig = convert_networkx_to_igraph(G_road)
+    G_road_ig = convert_networkx_to_igraph(G_road_nx)
     igraph_edges_to_gpkg(G_road_ig, "base")
 
     logger.info(f"Exporting igraph nodes to GeoPackage...")
-    nx_nodes_to_gpkg(G_road, stations_to_remove, "knn")
-    nx_nodes_to_gpkg(G_road, random_stations_to_remove, "random")
-    nx_nodes_to_gpkg(G_road, stations, "all_stations")
+    nx_nodes_to_gpkg(G_road_nx, stations_knn_nx, "knn")
+    nx_nodes_to_gpkg(G_road_nx, random_stations_nx, "random")
+    nx_nodes_to_gpkg(G_road_nx, stations_nx, "all_stations")
 
     graphs = {
         "Original Road Graph": G_road_ig,
