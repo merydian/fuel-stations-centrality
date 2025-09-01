@@ -17,7 +17,7 @@ class Config:
     STATIONS_MAX_RADIUS = 500  # Maximum radius for gas stations to network (in meters)
 
     # Coordinate Reference System (CRS) configuration
-    EPSG_CODE = 32639  # Target projected CRS for analysis
+    EPSG_CODE = 32642  # Target projected CRS for analysis
 
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / f"{PLACE.lower()}-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
