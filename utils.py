@@ -34,6 +34,8 @@ def get_gas_stations_from_graph(G):
         if Config.MAX_STATIONS:
             gas_stations = gas_stations.head(Config.MAX_STATIONS)
 
+        logger.info(f"Using {len(gas_stations)} gas stations for analysis")
+
         def get_xy(geom):
             if geom.geom_type == "Point":
                 return geom.x, geom.y
