@@ -2,6 +2,7 @@ import igraph as ig
 # import centrality_core
 import numpy as np
 import logging
+import heapq
 
 logger = logging.getLogger(__name__)
 
@@ -9,38 +10,41 @@ import networkx as nx
 import numpy as np
 from numba import jit, prange, njit
 
-def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_subset=None):
+def nodes_highest_avg_knn_distance_ig(graph: ig.Graph, knn: int, n: int, node_subset=None):
     """
     Returns `n` nodes with the highest average distance to their `knn` nearest neighbors
-    in a NetworkX graph, optionally restricted to a subset of nodes.
+    in an igraph graph, optionally restricted to a subset of nodes.
 
     Parameters:
-        graph (nx.Graph): The input NetworkX graph.
+        graph (igraph.Graph): The input igraph graph.
         knn (int): Number of nearest neighbors to consider.
         n (int): Number of nodes to return.
         node_subset (list, optional): Node IDs to restrict calculations. Defaults to all nodes.
 
     Returns:
-        list: Node IDs with the highest average distance to their knn neighbors.
+        list: Node IDs with the highest average distance to their knn neighbors in node_subset.
     """
     if node_subset is None:
-        node_subset = graph.nodes()
+        node_subset = list(range(graph.vcount()))
 
-    avg_distances = []
-
+    results = []
     for node in node_subset:
-        # Compute shortest path lengths from node to all other nodes
-        lengths = nx.single_source_dijkstra_path_length(graph, node)
-        # Remove self-distance
-        lengths.pop(node, None)
-        # Take knn smallest distances
-        knn_dists = sorted(lengths.values())[:knn]
-        avg_distances.append((node, np.mean(knn_dists)))
+        # distances from this node to all others
+        lengths = graph.shortest_paths(node, node_subset, weights="weight")[0]
 
-    # Sort by average distance descending and take top n
-    avg_distances.sort(key=lambda x: x[1])
-    top_nodes = [node for node, _ in avg_distances[:n] if node in node_subset]
-    return top_nodes, avg_distances
+        # filter out self (0 distance) and unreachable (inf)
+        distances = [d for i, d in zip(node_subset, lengths) if i != node and d != float("inf")]
+
+        if len(distances) < knn:
+            continue  # skip nodes that don't have enough reachable neighbors
+
+        nearest = heapq.nsmallest(knn, distances)
+        avg_distance = sum(nearest) / knn
+        results.append((avg_distance, node))
+
+    # pick top-n by largest avg_distance
+    results.sort(reverse=True)
+    return [node for _, node in results[:n]]
 
 def graph_straightness(g: ig.Graph, weight: str = None):
     """

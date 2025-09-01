@@ -129,63 +129,93 @@ def igraph_edges_to_gpkg(g, name):
     )
     edge_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_{Config.PLACE.lower()}_edges.gpkg", layer=name, driver="GPKG")
 
-def nx_nodes_to_gpkg(G, selected_nodes, name):
+def ig_nodes_to_gpkg(G, selected_nodes, name):
     """
-    Export NetworkX nodes to a GeoPackage as points.
+    Export igraph nodes to a GeoPackage as points.
 
     Parameters:
-    - G: networkx.Graph
+    - G: igraph.Graph
+    - selected_nodes: list of vertex indices to export
     - name: name of the output layer
-    - output_dir: folder to save the GPKG
-    - epsg: coordinate reference system (default 4326)
     """
     geometries = []
-    node_attrs = []
+    node_data = []
 
-    for node in selected_nodes:
-        attrs = G.nodes[node]
-        x = attrs.get("x")
-        y = attrs.get("y")
+    for node_idx in selected_nodes:
+        # Get node attributes from igraph vertex
+        vertex = G.vs[node_idx]
+        x = vertex["x"]
+        y = vertex["y"]
+        
+        # Create point geometry
         geometries.append(Point(x, y))
-        node_attrs.append(attrs)
+        
+        # Collect node attributes - use try/except for optional attributes
+        try:
+            vertex_name = vertex["name"]
+        except KeyError:
+            vertex_name = str(node_idx)
+            
+        node_data.append({
+            "node_id": node_idx,
+            "name": vertex_name
+        })
 
-    node_gdf = gpd.GeoDataFrame(node_attrs, geometry=geometries, crs=f"EPSG:{Config.EPSG_CODE}")
-    node_gdf.to_file(f"{Config.OUTPUT_DIR}/{name}_nodes.gpkg", layer=name, driver="GPKG")
+    # Create GeoDataFrame
+    node_gdf = gpd.GeoDataFrame(
+        node_data, 
+        geometry=geometries, 
+        crs=f"EPSG:{Config.EPSG_CODE}"
+    )
+    
+    # Export to GeoPackage
+    node_gdf.to_file(
+        f"{Config.OUTPUT_DIR}/{name}_nodes.gpkg", 
+        layer=name, 
+        driver="GPKG"
+    )
 
 
-def prune_graph_by_distance(G: nx.Graph, stations: list, max_dist: int) -> nx.Graph:
+def prune_igraph_by_distance(G, stations: list, max_dist: int):
     """
-    Remove edges from G that are further than `max_dist` graph-distance 
+    Remove edges from igraph G that are further than `max_dist` graph-distance 
     away from any node in `stations`.
 
     Parameters
     ----------
-    G : nx.Graph
-        The input graph (modified in-place).
+    G : igraph.Graph
+        The input igraph (modified in-place).
     stations : list
-        List of station nodes.
+        List of station vertex indices.
     max_dist : int
         Maximum allowed graph distance from any station.
 
     Returns
     -------
-    nx.Graph
+    igraph.Graph
         The pruned graph (same object as G).
-    """
-
-    # Compute shortest path length from all stations (multi-source BFS)
-    lengths = nx.multi_source_dijkstra_path_length(G, sources=stations, cutoff=max_dist, weight="length")
-
-    # Keep only nodes within `max_dist` of a station
-    valid_nodes = set(lengths.keys())
-
-    # Remove edges where both ends are outside the valid set
-    edges_to_remove = [
-        (u, v) for u, v in G.edges()
-        if u not in valid_nodes or v not in valid_nodes
-    ]
-    G.remove_edges_from(edges_to_remove)
-
+    """    
+    # Compute shortest path lengths from all stations
+    # igraph.Graph.distances() computes all-pairs shortest paths
+    # We only need distances from station nodes to all other nodes
+    distances = G.distances(source=stations, weights="length", mode="all")
+    
+    # Find nodes within max_dist of any station
+    valid_nodes = set()
+    for i, station_distances in enumerate(distances):
+        for node_idx, dist in enumerate(station_distances):
+            if dist <= max_dist:
+                valid_nodes.add(node_idx)
+    
+    # Find edges where both endpoints are outside valid set
+    edges_to_remove = []
+    for edge in G.es:
+        if edge.source not in valid_nodes or edge.target not in valid_nodes:
+            edges_to_remove.append(edge.index)
+    
+    # Remove invalid edges
+    G.delete_edges(edges_to_remove)
+    
     return G
 
 
