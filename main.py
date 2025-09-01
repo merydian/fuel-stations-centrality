@@ -66,7 +66,6 @@ def main():
     logger.info(f"Exporting igraph edges to GeoPackage...")
     igraph_edges_to_gpkg(G_road_random_ig, "random")
     igraph_edges_to_gpkg(G_road_filtered_ig, "knn")
-    
     igraph_edges_to_gpkg(G_road_ig, "base")
 
     logger.info(f"Exporting igraph nodes to GeoPackage...")
