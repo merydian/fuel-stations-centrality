@@ -38,7 +38,6 @@ def main():
     G_road_nx = ox.load_graphml(road_filepath)
     G_road_nx.remove_edges_from(nx.selfloop_edges(G_road_nx))
 
-    logger.info("Extracting gas stations from OSM...")
     stations_nx = get_gas_stations_from_graph(G_road_nx)
 
     logger.info(f"Total gas stations found: {len(stations_nx)}")
