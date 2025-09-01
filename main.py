@@ -68,7 +68,6 @@ def main():
     assert random_stations_nx != stations_knn_nx
 
     G_road_random_nx = G_road_nx.copy()
-    logger.info(f"Removing random stations: {random_stations_nx}")
     # G_road_random_nx.remove_nodes_from(random_stations_nx)
     remaining_stations_random_nx = set(stations_nx) - set(random_stations_nx)
     logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph...")
@@ -100,7 +99,7 @@ def main():
     nx_nodes_to_gpkg(G_road_nx, remaining_stations_random_nx, "random")
     nx_nodes_to_gpkg(G_road_nx, stations_nx, "all_stations")
 
-    graphs = {
+    """graphs = {
         "Original Road Graph": G_road_ig,
         "Filtered Road Graph": G_road_filtered_ig,
         "Randomized Road Graph": G_road_random_ig
@@ -123,7 +122,7 @@ def main():
     minutes, seconds = divmod(rem, 60)
     logger.info(f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
     logger.info(f"Nodes: {G_road_ig.vcount()}")
-    logger.info(f"Edges: {G_road_ig.ecount()}")
+    logger.info(f"Edges: {G_road_ig.ecount()}")"""
 
 
 if __name__ == "__main__":
