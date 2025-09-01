@@ -48,9 +48,9 @@ def main():
 
     G_road_filtered_nx = G_road_nx.copy()
     # G_road_filtered_nx.remove_nodes_from(stations_knn_nx)
-    remaining_stations = set(stations_nx) - set(stations_knn_nx)
+    remaining_stations_knn_nx = set(stations_nx) - set(stations_knn_nx)
     logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph...")
-    G_road_filtered_nx = prune_graph_by_distance(G_road_filtered_nx, remaining_stations, Config.MAX_DISTANCE)
+    G_road_filtered_nx = prune_graph_by_distance(G_road_filtered_nx, remaining_stations_knn_nx, Config.MAX_DISTANCE)
     logger.info(f"Before removal - stations: {len(stations_nx)}")
     logger.info(f"Remaining stations: {len(stations_nx) - len(stations_knn_nx)}")
     logger.info(f"Before removal - nodes: {len(G_road_nx.nodes)}, edges: {len(G_road_nx.edges)}")
@@ -71,9 +71,9 @@ def main():
     G_road_random_nx = G_road_nx.copy()
     logger.info(f"Removing random stations: {random_stations_nx}")
     # G_road_random_nx.remove_nodes_from(random_stations_nx)
-    remaining_stations = set(stations_nx) - set(random_stations_nx)
+    remaining_stations_random_nx = set(stations_nx) - set(random_stations_nx)
     logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph...")
-    G_road_random_nx = prune_graph_by_distance(G_road_random_nx, remaining_stations, Config.MAX_DISTANCE)
+    G_road_random_nx = prune_graph_by_distance(G_road_random_nx, remaining_stations_random_nx, Config.MAX_DISTANCE)
     logger.info(f"Remaining stations: {len(stations_nx) - len(random_stations_nx)}")
     logger.info(f"Remaining nodes in graph: {len(G_road_random_nx.nodes)}")
     logger.info(f"Remaining edges in graph: {len(G_road_random_nx.edges)}")
@@ -97,8 +97,8 @@ def main():
     igraph_edges_to_gpkg(G_road_ig, "base")
 
     logger.info(f"Exporting igraph nodes to GeoPackage...")
-    nx_nodes_to_gpkg(G_road_nx, stations_knn_nx, "knn")
-    nx_nodes_to_gpkg(G_road_nx, random_stations_nx, "random")
+    nx_nodes_to_gpkg(G_road_nx, remaining_stations_knn_nx, "knn")
+    nx_nodes_to_gpkg(G_road_nx, remaining_stations_random_nx, "random")
     nx_nodes_to_gpkg(G_road_nx, stations_nx, "all_stations")
 
     graphs = {
