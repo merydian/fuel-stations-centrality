@@ -43,7 +43,8 @@ def main():
     G_road_ig = convert_networkx_to_igraph(G_road_nx)
     name_to_idx = {v["name"]: v.index for v in G_road_ig.vs}
     stations_ig = [name_to_idx[str(nx_node)] for nx_node in stations_nx if str(nx_node) in name_to_idx]
-
+    stations_ig = list(set(stations_ig)) 
+    
     # 1. Prune base network
     G_road_ig = prune_igraph_by_distance(G_road_ig, stations_ig, Config.MAX_DISTANCE)
 
