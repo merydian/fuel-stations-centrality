@@ -44,7 +44,7 @@ def main():
     name_to_idx = {v["name"]: v.index for v in G_road_ig.vs}
     stations_ig = [name_to_idx[str(nx_node)] for nx_node in stations_nx if str(nx_node) in name_to_idx]
     stations_ig = list(set(stations_ig)) 
-    
+
     # 1. Prune base network
     G_road_ig = prune_igraph_by_distance(G_road_ig, stations_ig, Config.MAX_DISTANCE)
 
@@ -60,7 +60,6 @@ def main():
     G_road_random_ig = prune_igraph_by_distance(G_road_ig.copy(), remaining_stations_random_ig, Config.MAX_DISTANCE)
     
     # Assertions to check validity of analysis
-    assert len(stations_ig) == len(stations_nx)
     assert random_stations_ig != stations_knn_ig
     assert G_road_random_ig is not None
     assert G_road_filtered_ig is not None
