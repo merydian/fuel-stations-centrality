@@ -47,7 +47,7 @@ def main():
 
     logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph from base graph...")
     G_road_nx = prune_graph_by_distance(G_road_nx, stations_nx, Config.MAX_DISTANCE)
-
+    
     G_road_filtered_nx = G_road_nx.copy()
     # G_road_filtered_nx.remove_nodes_from(stations_knn_nx)
     remaining_stations_knn_nx = set(stations_nx) - set(stations_knn_nx)

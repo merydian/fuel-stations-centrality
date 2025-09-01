@@ -10,7 +10,7 @@ class Config:
 
     # Analysis parameters
     PLACE = "Iran"
-    MAX_DISTANCE = 250_000
+    MAX_DISTANCE = 100_000
     N_REMOVE = 50
     K_NN = 3
     REMOVAL_KIND = "knn_dist"
