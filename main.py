@@ -7,6 +7,7 @@ from utils import (
     convert_networkx_to_igraph,
     igraph_edges_to_gpkg,
     nx_nodes_to_gpkg,
+    nx_knn_nodes_to_gpkg,
 )
 from utils import prune_graph_by_distance
 import osmnx as ox
@@ -42,12 +43,12 @@ def main():
 
     logger.info(f"Total gas stations found: {len(stations_nx)}")
     logger.info(f"Removing {Config.N_REMOVE} gas stations based on highest avg {Config.K_NN}-NN distance...")
-    stations_knn_nx = nodes_highest_avg_knn_distance_nx(G_road_nx, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations_nx)
+    stations_knn_nx, stations_knn_nx_export = nodes_highest_avg_knn_distance_nx(G_road_nx, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations_nx)
     logger.info(f"Stations to remove: {stations_knn_nx}")
 
     logger.info(f"Remove far edges further than {Config.MAX_DISTANCE} from graph from base graph...")
     G_road_nx = prune_graph_by_distance(G_road_nx, stations_nx, Config.MAX_DISTANCE)
-    
+
     G_road_filtered_nx = G_road_nx.copy()
     # G_road_filtered_nx.remove_nodes_from(stations_knn_nx)
     remaining_stations_knn_nx = set(stations_nx) - set(stations_knn_nx)
@@ -98,8 +99,9 @@ def main():
     igraph_edges_to_gpkg(G_road_ig, "base")
 
     logger.info(f"Exporting igraph nodes to GeoPackage...")
-    nx_nodes_to_gpkg(G_road_nx, remaining_stations_knn_nx, "knn")
-    nx_nodes_to_gpkg(G_road_nx, remaining_stations_random_nx, "random")
+    nx_knn_nodes_to_gpkg(G_road_nx, stations_knn_nx_export, "knn_removed")
+    nx_nodes_to_gpkg(G_road_nx, remaining_stations_knn_nx, "knn_remaining")
+    nx_nodes_to_gpkg(G_road_nx, remaining_stations_random_nx, "random_remaining")
     nx_nodes_to_gpkg(G_road_nx, stations_nx, "all_stations")
 
     """graphs = {

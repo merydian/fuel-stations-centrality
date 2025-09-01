@@ -187,3 +187,27 @@ def prune_graph_by_distance(G: nx.Graph, stations: list, max_dist: int) -> nx.Gr
     G.remove_edges_from(edges_to_remove)
 
     return G
+
+
+def nx_knn_nodes_to_gpkg(G, selected_nodes, name):
+    geometries = []
+    knn_values = []
+
+    for node, knn in selected_nodes:
+        attrs = G.nodes[node]
+        x = attrs.get("x")
+        y = attrs.get("y")
+        geometries.append(Point(x, y))
+        knn_values.append(knn)
+
+    node_gdf = gpd.GeoDataFrame(
+        {"knn": knn_values}, 
+        geometry=geometries, 
+        crs=f"EPSG:{Config.EPSG_CODE}"
+    )
+
+    node_gdf.to_file(
+        f"{Config.OUTPUT_DIR}/{name}_nodes.gpkg",
+        layer=name,
+        driver="GPKG"
+    )

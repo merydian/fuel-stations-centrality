@@ -40,7 +40,7 @@ def nodes_highest_avg_knn_distance_nx(graph: nx.Graph, knn: int, n: int, node_su
     # Sort by average distance descending and take top n
     avg_distances.sort(key=lambda x: x[1])
     top_nodes = [node for node, _ in avg_distances[:n] if node in node_subset]
-    return top_nodes
+    return top_nodes, avg_distances
 
 def graph_straightness(g: ig.Graph, weight: str = None):
     """
