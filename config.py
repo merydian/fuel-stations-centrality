@@ -16,6 +16,9 @@ class Config:
     REMOVAL_KIND = "knn_dist"
     STATIONS_MAX_RADIUS = 500  # Maximum radius for gas stations to network (in meters)
 
+    # Coordinate Reference System (CRS) configuration
+    EPSG_CODE = 32639  # Target projected CRS for analysis
+
     LOCAL_PBF_PATH = Path(__file__).parent / "data" / f"{PLACE.lower()}-latest.osm"
     SIMPLIFY_ROAD_NETWORK = True
 
@@ -35,9 +38,6 @@ class Config:
     DATA_DIR = Path("data")
     OUTPUT_DIR = Path("output")
     CACHE_DIR = Path("cache")
-
-    # Coordinate Reference System (CRS) configuration
-    EPSG_CODE = 32650  # Target projected CRS for analysis
 
     @classmethod
     def get_target_crs(cls):
