@@ -10,7 +10,7 @@ class Config:
 
     # Analysis parameters
     PLACE = "Iran"
-    MAX_DISTANCE = 150_000
+    MAX_DISTANCE = 100_000
     N_REMOVE = 80
     K_NN = 5
     REMOVAL_KIND = "knn_dist"
@@ -29,7 +29,7 @@ class Config:
 
     # Data limits
     MIN_STATIONS_REQUIRED = 2
-    MAX_STATIONS = 1000  # Maximum number of stations to use (None = no limit)
+    MAX_STATIONS = None  # Maximum number of stations to use (None = no limit)
 
     # Random seed for reproducibility
     RANDOM_SEED = 42
