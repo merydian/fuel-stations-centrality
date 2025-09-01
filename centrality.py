@@ -27,22 +27,22 @@ def nodes_highest_avg_knn_distance_ig(graph: ig.Graph, knn: int, n: int, node_su
     if node_subset is None:
         node_subset = list(range(graph.vcount()))
 
+    # Compute all distances at once (much faster)
+    all_distances = graph.distances(source=node_subset, target=node_subset, weights="weight")
+    
     results = []
-    for node in node_subset:
-        # distances from this node to all others
-        lengths = graph.shortest_paths(node, node_subset, weights="weight")[0]
-
-        # filter out self (0 distance) and unreachable (inf)
-        distances = [d for i, d in zip(node_subset, lengths) if i != node and d != float("inf")]
-
+    for i, node in enumerate(node_subset):
+        # Get distances from this node to all others
+        distances = [all_distances[i][j] for j in range(len(node_subset)) 
+                    if i != j and all_distances[i][j] != float("inf")]
+        
         if len(distances) < knn:
-            continue  # skip nodes that don't have enough reachable neighbors
-
+            continue
+            
         nearest = heapq.nsmallest(knn, distances)
         avg_distance = sum(nearest) / knn
         results.append((avg_distance, node))
 
-    # pick top-n by largest avg_distance
     results.sort(reverse=True)
     return [node for _, node in results[:n]]
 
