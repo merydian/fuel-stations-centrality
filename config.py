@@ -26,7 +26,7 @@ class Config:
 
     # Data limits
     MIN_STATIONS_REQUIRED = 2
-    MAX_STATIONS = 300  # Maximum number of stations to use (None = no limit)
+    MAX_STATIONS = None  # Maximum number of stations to use (None = no limit)
 
     # Random seed for reproducibility
     RANDOM_SEED = 42
