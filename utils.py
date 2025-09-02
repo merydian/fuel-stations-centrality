@@ -398,6 +398,8 @@ class Utils:
 
         logger.info(f"✓ LaTeX centrality table saved to: {output_file}")
 
+        df.to_csv(f"{self.config.OUTPUT_DIR}/centrality_table_{self.config.PLACE.lower()}.csv", index=False)
+
         return df
 
     def generate_graph_info_table(self, graphs_dict):
@@ -489,5 +491,7 @@ class Utils:
             f.write(latex_table)
 
         logger.info(f"✓ Graph info LaTeX table saved to: {output_file}")
+
+        df.to_csv(f"{self.config.OUTPUT_DIR}/graph_info_table_{self.config.PLACE.lower()}.csv", index=False)
 
         return df
