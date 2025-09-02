@@ -13,7 +13,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--n-remove", type=int, help="Number of stations to remove")
     parser.add_argument(
-        "--epsg-code", type=str, help="EPSG code for the coordinate reference system"
+        "--epsg-code", type=int, help="EPSG code for the coordinate reference system"
     )
     parser.add_argument(
         "--max-stations", type=int, help="Number of stations to use (None = all)"
