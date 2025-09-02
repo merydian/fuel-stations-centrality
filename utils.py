@@ -4,7 +4,6 @@ from shapely.geometry import LineString, Point
 import geopandas as gpd
 import pandas as pd
 from tabulate import tabulate
-import requests
 from scipy.spatial import Voronoi
 from shapely.geometry import Polygon, Point
 from shapely.ops import voronoi_diagram
