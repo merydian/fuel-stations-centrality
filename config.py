@@ -33,6 +33,8 @@ class Config:
     MIN_STATIONS_REQUIRED = 2
     MAX_STATIONS = None  # None = no limit
 
+    CALCULATE_CENTRALITY = False
+
     # Random seed
     RANDOM_SEED = 42
 

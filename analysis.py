@@ -67,7 +67,8 @@ def analysis(Config):
         "Randomized Filtered": G_road_random_ig
     }
 
-    utils.generate_centrality_table(graphs)
+    if Config.CALCULATE_CENTRALITY:
+        utils.generate_centrality_table(graphs)
     utils.generate_graph_info_table(graphs)
 
     end = time.time()
