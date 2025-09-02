@@ -21,10 +21,12 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    Config = Config(args)
+    config = Config(args)
 
-    Config.ensure_directories()
-    Config.validate_config()
+    print(f"Configuration: {config.__dict__}")
+
+    config.ensure_directories()
+    config.validate_config()
 
     logging.basicConfig(
         level=logging.INFO,
@@ -32,11 +34,11 @@ if __name__ == "__main__":
         handlers=[
             logging.StreamHandler(sys.stdout),  # Print to console
             logging.FileHandler(
-                Config.OUTPUT_DIR / f"fuel_stations_analysis_{Config.PLACE.lower()}.log"
+                config.OUTPUT_DIR / f"fuel_stations_analysis_{config.PLACE.lower()}.log"
             ),  # Also save to file
         ],
     )
 
-    build_graph(Config)
+    build_graph(config)
 
-    analysis(Config)
+    analysis(config)

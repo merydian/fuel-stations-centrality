@@ -52,63 +52,57 @@ class Config:
         self.OUTPUT_DIR = Path(f"output/{self.PLACE.lower()}")
         self.LOCAL_PBF_PATH = self.DATA_DIR / f"{self.PLACE.lower()}-latest.osm"
 
-    @classmethod
-    def get_target_crs(cls):
+    def get_target_crs(self):
         """Get target projected CRS string."""
-        return f"EPSG:{cls.EPSG_CODE}"
+        return f"EPSG:{self.EPSG_CODE}"
 
-    @classmethod
-    def ensure_target_crs(cls, gdf, name="data"):
+    def ensure_target_crs(self, gdf, name="data"):
         """Ensure GeoDataFrame is in target projected CRS."""
         import logging
 
         logger = logging.getLogger(__name__)
-        if str(gdf.crs) != cls.get_target_crs():
-            logger.info(f"Projecting {name} from {gdf.crs} to {cls.get_target_crs()}")
-            gdf = gdf.to_crs(cls.get_target_crs())
+        if str(gdf.crs) != self.get_target_crs():
+            logger.info(f"Projecting {name} from {gdf.crs} to {self.get_target_crs()}")
+            gdf = gdf.to_crs(self.get_target_crs())
         else:
-            logger.debug(f"{name} already in target CRS {cls.get_target_crs()}")
+            logger.debug(f"{name} already in target CRS {self.get_target_crs()}")
         return gdf
 
-    @classmethod
-    def ensure_directories(cls):
+    def ensure_directories(self):
         """Ensure all required directories exist."""
-        cls.DATA_DIR.mkdir(exist_ok=True)
-        cls.OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
-        cls.CACHE_DIR.mkdir(exist_ok=True)
+        self.DATA_DIR.mkdir(exist_ok=True)
+        self.OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+        self.CACHE_DIR.mkdir(exist_ok=True)
 
-    @classmethod
-    def get_road_filename(cls) -> str:
+    def get_road_filename(self) -> str:
         """Generate standardized road network filename."""
-        safe_name = cls.PLACE.lower().replace(", ", "_").replace(" ", "_")
+        safe_name = self.PLACE.lower().replace(", ", "_").replace(" ", "_")
         return f"{safe_name}_road.graphml"
 
-    @classmethod
-    def get_road_filepath(cls) -> Path:
+    def get_road_filepath(self) -> Path:
         """Get the file path for the road network."""
-        return cls.DATA_DIR / cls.get_road_filename()
+        return self.DATA_DIR / self.get_road_filename()
 
-    @classmethod
-    def validate_config(cls):
+    def validate_config(self):
         """Validate configuration parameters."""
-        if cls.N_REMOVE <= 0:
+        if self.N_REMOVE <= 0:
             raise ValueError("N_REMOVE must be positive")
-        if cls.K_NN <= 0:
+        if self.K_NN <= 0:
             raise ValueError("K_NN must be positive")
-        if cls.MAX_DISTANCE <= 0:
+        if self.MAX_DISTANCE <= 0:
             raise ValueError("MAX_DISTANCE must be positive")
-        if cls.MAX_STATIONS is not None and cls.MAX_STATIONS <= 0:
+        if self.MAX_STATIONS is not None and self.MAX_STATIONS <= 0:
             raise ValueError("MAX_STATIONS must be positive or None")
         if (
-            cls.MAX_STATIONS is not None
-            and cls.MAX_STATIONS < cls.MIN_STATIONS_REQUIRED
+            self.MAX_STATIONS is not None
+            and self.MAX_STATIONS < self.MIN_STATIONS_REQUIRED
         ):
             raise ValueError(
-                f"MAX_STATIONS ({cls.MAX_STATIONS}) must be >= MIN_STATIONS_REQUIRED ({cls.MIN_STATIONS_REQUIRED})"
+                f"MAX_STATIONS ({self.MAX_STATIONS}) must be >= MIN_STATIONS_REQUIRED ({self.MIN_STATIONS_REQUIRED})"
             )
-        if cls.MAX_STATIONS is not None and cls.N_REMOVE >= cls.MAX_STATIONS:
+        if self.MAX_STATIONS is not None and self.N_REMOVE >= self.MAX_STATIONS:
             raise ValueError(
-                f"N_REMOVE ({cls.N_REMOVE}) must be < MAX_STATIONS ({cls.MAX_STATIONS})"
+                f"N_REMOVE ({self.N_REMOVE}) must be < MAX_STATIONS ({self.MAX_STATIONS})"
             )
-        if cls.SAMPLE_NODES is not None and cls.SAMPLE_NODES <= 0:
+        if self.SAMPLE_NODES is not None and self.SAMPLE_NODES <= 0:
             raise ValueError("SAMPLE_NODES must be positive or None")
