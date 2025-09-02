@@ -11,8 +11,8 @@ class Config:
     # Analysis parameters
     PLACE = "Iran"
     MAX_DISTANCE = 100_000
-    N_REMOVE = 2
-    K_NN = 50
+    N_REMOVE = 50
+    K_NN = 5
     REMOVAL_KIND = "knn_dist"
     STATIONS_MAX_RADIUS = 500  # Maximum radius for gas stations to network (in meters)
 
