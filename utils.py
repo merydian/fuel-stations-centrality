@@ -503,27 +503,35 @@ class Utils:
 
 
     def generate_voronoi_polygons(self, graphs_dict, country_name):
+        logger.info(f"Starting Voronoi polygon generation for country: {country_name}")
         country_gdf = ox.geocode_to_gdf(country_name)        
         country_gdf_proj = country_gdf.to_crs(f"EPSG:{self.config.EPSG_CODE}")
         country_boundary_proj = country_gdf_proj.geometry.iloc[0]
+        logger.info("Country boundary successfully fetched and reprojected")
         
         all_stats = []
         
         for name, graph in graphs_dict.items():
+            logger.info(f"Processing graph: {name}")
             xs = graph.vs["x"]
             ys = graph.vs["y"]
             coords = np.column_stack((xs, ys))
+            logger.debug(f"Extracted {len(coords)} coordinates from graph: {name}")
 
             hull = ConvexHull(coords)
+            logger.debug(f"Computed convex hull for graph: {name}")
 
             # Extract the vertices of the convex hull
             hull_points = coords[hull.vertices]
+            logger.debug(f"Convex hull has {len(hull_points)} vertices")
 
             # Optionally, create a Shapely Polygon for the convex hull
             convex_hull_polygon = Polygon(hull_points)
+            logger.debug("Created convex hull polygon")
 
             # Generate Voronoi regions
             regions, pts = voronoi_regions_from_coords(coords, convex_hull_polygon)
+            logger.info(f"Generated Voronoi regions for graph: {name}")
 
             # Clip Voronoi regions to the country boundary
             clipped_regions = {
@@ -531,19 +539,24 @@ class Utils:
                 for key, region in regions.items()
                 if not region.is_empty
             }
+            logger.info(f"Clipped Voronoi regions to country boundary for graph: {name}")
 
             # Create GeoDataFrame for the clipped regions
             regions_gdf = gpd.GeoDataFrame(
                 geometry=list(clipped_regions.values()),
                 crs=f"EPSG:{self.config.EPSG_CODE}"
             )
+            logger.debug(f"Created GeoDataFrame for clipped regions of graph: {name}")
 
             # Save the clipped regions to a GeoPackage
-            regions_gdf.to_file(f"{self.config.OUTPUT_DIR}/voronoi_{name}.gpkg", driver="GPKG")
+            output_path = f"{self.config.OUTPUT_DIR}/voronoi_{name}.gpkg"
+            regions_gdf.to_file(output_path, driver="GPKG")
+            logger.info(f"Saved Voronoi polygons to GeoPackage: {output_path}")
 
             # Calculate area statistics for the clipped regions
             regions_gdf["area_m2"] = regions_gdf.area
             area_stats = regions_gdf["area_m2"].describe()
+            logger.debug(f"Calculated area statistics for graph: {name}")
             
             # Add graph name to stats
             area_stats_dict = area_stats.to_dict()
@@ -552,9 +565,12 @@ class Utils:
 
         # Combine all stats into one DataFrame
         all_stats_df = pd.DataFrame(all_stats)
-        
+        logger.info("Combined area statistics for all graphs")
+
         # Set graph_scenario as index
         all_stats_df.set_index("graph_scenario", inplace=True)
         
         # Save combined stats to one CSV
-        all_stats_df.to_csv(f"{self.config.OUTPUT_DIR}/voronoi_area_stats_all_{self.config.PLACE.lower()}.csv")
+        output_csv_path = f"{self.config.OUTPUT_DIR}/voronoi_area_stats_all_{self.config.PLACE.lower()}.csv"
+        all_stats_df.to_csv(output_csv_path)
+        logger.info(f"Saved combined area statistics to CSV: {output_csv_path}")

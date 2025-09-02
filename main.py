@@ -39,7 +39,7 @@ if __name__ == "__main__":
         ],
     )
 
-    if not Config.get_road_filepath().exists():
+    if not config.get_road_filepath().exists():
         logging.info(f"Graph file not found at {config.LOCAL_PBF_PATH}, building graph...")
         build_graph(config)
         logging.info("Graph building completed")
