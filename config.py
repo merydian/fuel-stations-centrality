@@ -9,9 +9,9 @@ class Config:
     """Configuration class for analysis parameters."""
 
     # Analysis parameters
-    PLACE = "Iran"
+    PLACE = "Cook-islands"
     MAX_DISTANCE = 100_000
-    N_REMOVE = 80
+    N_REMOVE = 2
     K_NN = 5
     REMOVAL_KIND = "knn_dist"
     STATIONS_MAX_RADIUS = 500  # Maximum radius for gas stations to network (in meters)
@@ -36,7 +36,7 @@ class Config:
 
     # Directories
     DATA_DIR = Path("data")
-    OUTPUT_DIR = Path("output")
+    OUTPUT_DIR = Path(f"output/{PLACE.lower()}")
     CACHE_DIR = Path("cache")
 
     @classmethod

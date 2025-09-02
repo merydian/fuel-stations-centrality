@@ -3,11 +3,12 @@ import random
 from config import Config
 from centrality import nodes_highest_avg_knn_distance_ig, graph_straightness
 from utils import (
+    generate_centrality_table,
+    generate_graph_info_table,
     get_gas_stations_from_graph,
     convert_networkx_to_igraph,
     igraph_edges_to_gpkg,
     ig_nodes_to_gpkg,
-    nx_knn_nodes_to_gpkg,
 )
 from utils import prune_igraph_by_distance
 import osmnx as ox
@@ -16,13 +17,16 @@ import time
 import logging
 import sys
 
+Config.ensure_directories()
+Config.validate_config()
+
 # Configure logging at the very beginning
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),  # Print to console
-        logging.FileHandler('fuel_stations_analysis.log')  # Also save to file
+        logging.FileHandler(Config.OUTPUT_DIR / f'fuel_stations_analysis_{Config.PLACE.lower()}.log')  # Also save to file
     ]
 )
 
@@ -30,8 +34,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Main function for fuel station centrality analysis."""
-    Config.ensure_directories()
-    Config.validate_config()
+    start = time.time()
 
     # prepare network and stations
     road_filepath = Config.get_road_filepath()
@@ -75,22 +78,14 @@ def main():
     ig_nodes_to_gpkg(G_road_ig, remaining_stations_random_ig, "random_remaining")
     ig_nodes_to_gpkg(G_road_ig, stations_ig, "all_stations")
 
-    """graphs = {
-        "Original Road Graph": G_road_ig,
-        "Filtered Road Graph": G_road_filtered_ig,
-        "Randomized Road Graph": G_road_random_ig
+    graphs = {
+        "Original": G_road_ig,
+        "KNN Filtered": G_road_filtered_ig,
+        "Randomized Filtered": G_road_random_ig
     }
 
-    logger.info("=== Centrality Measures ===")
-    for name, graph in graphs.items():
-        closeness = graph.closeness()
-        betweenness = graph.betweenness()
-        degree = graph.degree()
-        straightness = graph_straightness(graph)
-        logger.info(f"{name} - Closeness (avg): {sum(closeness)/len(closeness):.4f}")
-        logger.info(f"{name} - Betweenness (avg): {sum(betweenness)/len(betweenness):.4f}")
-        logger.info(f"{name} - Degree (avg): {sum(degree)/len(degree):.4f}")
-        logger.info(f"{name} - Straightness (avg): {straightness:.4f}")
+    generate_centrality_table(graphs)
+    generate_graph_info_table(graphs)
 
     end = time.time()
     elapsed = end - start
@@ -98,7 +93,7 @@ def main():
     minutes, seconds = divmod(rem, 60)
     logger.info(f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}")
     logger.info(f"Nodes: {G_road_ig.vcount()}")
-    logger.info(f"Edges: {G_road_ig.ecount()}")"""
+    logger.info(f"Edges: {G_road_ig.ecount()}")
 
 
 if __name__ == "__main__":

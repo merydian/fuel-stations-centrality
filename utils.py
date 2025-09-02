@@ -3,7 +3,8 @@ import osmnx as ox
 from config import Config
 from shapely.geometry import LineString, Point
 import geopandas as gpd
-import networkx as nx
+import pandas as pd
+from tabulate import tabulate
 
 
 logger = logging.getLogger(__name__)
@@ -241,3 +242,157 @@ def nx_knn_nodes_to_gpkg(G, selected_nodes, name):
         layer=name,
         driver="GPKG"
     )
+
+def generate_centrality_table(graphs_dict):
+    """
+    Generate centrality measures table for multiple graphs.
+    
+    Parameters:
+    -----------
+    graphs_dict : dict
+        Dictionary with graph names as keys and igraph.Graph objects as values
+        
+    Returns:
+    --------
+    pandas.DataFrame
+        DataFrame containing centrality measures for each graph
+    """
+    logger.info("=== Computing Centrality Measures ===")
+    
+    results = []
+    for name, graph in graphs_dict.items():
+        logger.info(f"Computing centrality for: {name}")
+        
+        # Compute centrality measures
+        closeness = graph.closeness()
+        betweenness = graph.betweenness()
+        degree = graph.degree()
+        
+        # Calculate averages
+        avg_closeness = sum(closeness) / len(closeness)
+        avg_betweenness = sum(betweenness) / len(betweenness)
+        avg_degree = sum(degree) / len(degree)
+        
+        # Store results
+        results.append({
+            'Graph Scenario': name,
+            'Nodes': graph.vcount(),
+            'Edges': graph.ecount(),
+            'Closeness (avg)': f"{avg_closeness:.4f}",
+            'Betweenness (avg)': f"{avg_betweenness:.4f}",
+            'Degree (avg)': f"{avg_degree:.2f}"
+        })
+        
+        logger.info(f"  - Nodes: {graph.vcount()}, Edges: {graph.ecount()}")
+        logger.info(f"  - Closeness: {avg_closeness:.4f}")
+        logger.info(f"  - Betweenness: {avg_betweenness:.4f}")
+        logger.info(f"  - Degree: {avg_degree:.2f}")
+    
+    # Create DataFrame
+    df = pd.DataFrame(results)
+    
+    # Print console table
+    print("\n" + "="*60)
+    print("CENTRALITY MEASURES SUMMARY")
+    print("="*60)
+    print(tabulate(df, headers='keys', tablefmt='grid', showindex=False))
+    
+    # Generate LaTeX table
+    latex_columns = ['Graph Scenario', 'Closeness (avg)', 'Betweenness (avg)', 'Degree (avg)']
+    latex_df = df[latex_columns]
+    
+    latex_table = latex_df.to_latex(
+        index=False,
+        column_format='lccc',
+        caption='Centrality Measures Comparison for Different Graph Scenarios',
+        label='tab:centrality_measures',
+        escape=False
+    )
+    
+    # Save LaTeX table to file
+    output_file = f"{Config.OUTPUT_DIR}/centrality_table{Config.PLACE.lower()}.tex"
+    with open(output_file, "w") as f:
+        f.write(latex_table)
+    
+    logger.info(f"LaTeX table saved to: {output_file}")
+    
+    return df
+
+def generate_graph_info_table(graphs_dict):
+    """
+    Generate general information table for multiple graphs including total length.
+    
+    Parameters:
+    -----------
+    graphs_dict : dict
+        Dictionary with graph names as keys and igraph.Graph objects as values
+        
+    Returns:
+    --------
+    pandas.DataFrame
+        DataFrame containing general graph information
+    """
+    logger.info("=== Computing Graph Information ===")
+    
+    results = []
+    for name, graph in graphs_dict.items():
+        logger.info(f"Computing graph info for: {name}")
+        
+        # Basic graph metrics
+        num_nodes = graph.vcount()
+        num_edges = graph.ecount()
+        
+        # Calculate total length
+        edge_lengths = graph.es["length"]
+        total_length = sum(edge_lengths)
+        total_length_km = total_length / 1000  # Convert to kilometers
+        
+        # Calculate average edge length
+        avg_edge_length = total_length / num_edges if num_edges > 0 else 0
+        
+        # Calculate graph density
+        max_edges = num_nodes * (num_nodes - 1) / 2  # For undirected graph
+        density = num_edges / max_edges if max_edges > 0 else 0
+        
+        # Store results
+        results.append({
+            'Graph Scenario': name,
+            'Nodes': num_nodes,
+            'Edges': num_edges,
+            'Total Length (km)': f"{total_length_km:.2f}",
+            'Avg Edge Length (m)': f"{avg_edge_length:.1f}",
+            'Density': f"{density:.6f}"
+        })
+        
+        logger.info(f"  - Nodes: {num_nodes:,}")
+        logger.info(f"  - Edges: {num_edges:,}")
+        logger.info(f"  - Total length: {total_length_km:.2f} km")
+        logger.info(f"  - Average edge length: {avg_edge_length:.1f} m")
+        logger.info(f"  - Graph density: {density:.6f}")
+    
+    # Create DataFrame
+    df = pd.DataFrame(results)
+    
+    # Print console table
+    print("\n" + "="*80)
+    print("GRAPH INFORMATION SUMMARY")
+    print("="*80)
+    print(tabulate(df, headers='keys', tablefmt='grid', showindex=False))
+    
+    # Generate LaTeX table
+    latex_table = df.to_latex(
+        index=False,
+        column_format='lrrrrr',
+        caption='Graph Information Summary for Different Scenarios',
+        label='tab:graph_info',
+        escape=False
+    )
+    
+    # Save LaTeX table to file
+    output_file = f"{Config.OUTPUT_DIR}/graph_info_{Config.PLACE.lower()}.tex"
+    with open(output_file, "w") as f:
+        f.write(latex_table)
+    
+    logger.info(f"Graph info LaTeX table saved to: {output_file}")
+    
+    return df
