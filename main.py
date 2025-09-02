@@ -39,6 +39,9 @@ if __name__ == "__main__":
         ],
     )
 
-    build_graph(config)
+    if not config.LOCAL_PBF_PATH.exists():
+        build_graph(config)
+    else:
+        logging.info(f"PBF file already exists at {config.LOCAL_PBF_PATH}, skipping graph building")
 
     analysis(config)
