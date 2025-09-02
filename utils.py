@@ -518,20 +518,20 @@ class Utils:
             coords = np.column_stack((xs, ys))
             logger.debug(f"Extracted {len(coords)} coordinates from graph: {name}")
 
-            hull = ConvexHull(coords)
-            logger.debug(f"Computed convex hull for graph: {name}")
+            # Generate Voronoi diagram using scipy
+            vor = Voronoi(coords)
+            logger.info(f"Generated Voronoi diagram for graph: {name}")
 
-            # Extract the vertices of the convex hull
-            hull_points = coords[hull.vertices]
-            logger.debug(f"Convex hull has {len(hull_points)} vertices")
+            # Convert Voronoi regions to Shapely polygons
+            regions = {}
+            for i, region_idx in enumerate(vor.point_region):
+                region = vor.regions[region_idx]
+                if -1 in region or len(region) < 3:
+                    continue  # Skip infinite or invalid regions
+                polygon = Polygon([vor.vertices[j] for j in region])
+                regions[i] = polygon
 
-            # Optionally, create a Shapely Polygon for the convex hull
-            convex_hull_polygon = Polygon(hull_points)
-            logger.debug("Created convex hull polygon")
-
-            # Generate Voronoi regions
-            regions, pts = voronoi_regions_from_coords(coords, convex_hull_polygon)
-            logger.info(f"Generated Voronoi regions for graph: {name}")
+            logger.info(f"Converted Voronoi regions to Shapely polygons for graph: {name}")
 
             # Clip Voronoi regions to the country boundary
             clipped_regions = {
@@ -574,3 +574,4 @@ class Utils:
         output_csv_path = f"{self.config.OUTPUT_DIR}/voronoi_area_stats_all_{self.config.PLACE.lower()}.csv"
         all_stats_df.to_csv(output_csv_path)
         logger.info(f"Saved combined area statistics to CSV: {output_csv_path}")
+
