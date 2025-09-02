@@ -33,7 +33,7 @@ class Config:
     MIN_STATIONS_REQUIRED = 2
     MAX_STATIONS = None  # None = no limit
 
-    CALCULATE_CENTRALITY = True
+    CALCULATE_CENTRALITY = False
     CALCULATE_VORONOI = True
 
     # Random seed
