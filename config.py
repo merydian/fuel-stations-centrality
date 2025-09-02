@@ -34,6 +34,7 @@ class Config:
     MAX_STATIONS = None  # None = no limit
 
     CALCULATE_CENTRALITY = True
+    CALCULATE_VORONOI = True
 
     # Random seed
     RANDOM_SEED = 42

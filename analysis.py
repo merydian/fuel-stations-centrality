@@ -86,7 +86,11 @@ def analysis(Config):
 
     if Config.CALCULATE_CENTRALITY:
         utils.generate_centrality_table(graphs)
+    
     utils.generate_graph_info_table(graphs)
+
+    if Config.CALCULATE_VORONOI:
+        utils.generate_voronoi_polygons(graphs, Config.PLACE.lower())
 
     end = time.time()
     elapsed = end - start
