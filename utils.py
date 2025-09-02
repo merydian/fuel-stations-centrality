@@ -6,6 +6,7 @@ import pandas as pd
 from tabulate import tabulate
 from scipy.spatial import Voronoi
 from shapely.geometry import Polygon, Point
+from shapely.ops import unary_union
 from scipy.spatial import ConvexHull
 from geovoronoi import voronoi_regions_from_coords
 import numpy as np
@@ -507,6 +508,7 @@ class Utils:
         country_gdf = ox.geocode_to_gdf(country_name)        
         country_gdf_proj = country_gdf.to_crs(f"EPSG:{self.config.EPSG_CODE}")
         country_boundary_proj = country_gdf_proj.geometry.iloc[0]
+        country_boundary_proj = unary_union(country_boundary_proj)
         logger.info("Country boundary successfully fetched and reprojected")
         
         all_stats = []
