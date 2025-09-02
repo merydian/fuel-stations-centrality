@@ -39,12 +39,12 @@ if __name__ == "__main__":
         ],
     )
 
-    if not config.LOCAL_PBF_PATH.exists():
-        logging.info(f"PBF file not found at {config.LOCAL_PBF_PATH}, building graph...")
+    if not Config.get_road_filepath().exists():
+        logging.info(f"Graph file not found at {config.LOCAL_PBF_PATH}, building graph...")
         build_graph(config)
         logging.info("Graph building completed")
     else:
-        logging.info(f"PBF file already exists at {config.LOCAL_PBF_PATH}, skipping graph building")
+        logging.info(f"Graph file already exists at {config.LOCAL_PBF_PATH}, skipping graph building")
 
     logging.info("Starting analysis...")
     analysis(config)
