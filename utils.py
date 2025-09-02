@@ -6,6 +6,7 @@ import pandas as pd
 from tabulate import tabulate
 from scipy.spatial import Voronoi
 from shapely.geometry import Polygon, Point
+from scipy.spatial import ConvexHull
 from geovoronoi import voronoi_regions_from_coords
 import numpy as np
 
@@ -513,14 +514,35 @@ class Utils:
             ys = graph.vs["y"]
             coords = np.column_stack((xs, ys))
 
-            regions, pts = voronoi_regions_from_coords(coords, country_boundary_proj)
+            hull = ConvexHull(coords)
 
-            regions_gdf = gpd.GeoDataFrame(geometry=list(regions.values()), crs=f"EPSG:{self.config.EPSG_CODE}")
+            # Extract the vertices of the convex hull
+            hull_points = coords[hull.vertices]
 
-            regions_gdf.to_file(f"{self.config.OUTPUT_DIR}/voronoi_{name}.gpkg", driver="gpkg")
+            # Optionally, create a Shapely Polygon for the convex hull
+            convex_hull_polygon = Polygon(hull_points)
 
+            # Generate Voronoi regions
+            regions, pts = voronoi_regions_from_coords(coords, convex_hull_polygon)
+
+            # Clip Voronoi regions to the country boundary
+            clipped_regions = {
+                key: region.intersection(country_boundary_proj)
+                for key, region in regions.items()
+                if not region.is_empty
+            }
+
+            # Create GeoDataFrame for the clipped regions
+            regions_gdf = gpd.GeoDataFrame(
+                geometry=list(clipped_regions.values()),
+                crs=f"EPSG:{self.config.EPSG_CODE}"
+            )
+
+            # Save the clipped regions to a GeoPackage
+            regions_gdf.to_file(f"{self.config.OUTPUT_DIR}/voronoi_{name}.gpkg", driver="GPKG")
+
+            # Calculate area statistics for the clipped regions
             regions_gdf["area_m2"] = regions_gdf.area
-
             area_stats = regions_gdf["area_m2"].describe()
             
             # Add graph name to stats
