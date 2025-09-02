@@ -20,29 +20,6 @@ if hasattr(G_road.graph, "crs"):
 logger.info(f"Projecting road network to CRS {Config.get_target_crs()}...")
 G_road = ox.project_graph(G_road, to_crs=Config.get_target_crs())
 
-# Verify projection worked correctly
-sample_nodes = list(G_road.nodes(data=True))[:5]
-if sample_nodes:
-    coords = [(data["x"], data["y"]) for node, data in sample_nodes]
-    x_vals = [x for x, y in coords]
-    y_vals = [y for x, y in coords]
-    logger.info("Sample projected coordinates:")
-    logger.info(f"  X range: {min(x_vals):.1f} to {max(x_vals):.1f}")
-    logger.info(f"  Y range: {min(y_vals):.1f} to {max(y_vals):.1f}")
-
-    # Mongolia UTM coordinates should be roughly:
-    # X: 200,000 to 800,000 (easting)
-    # Y: 4,500,000 to 5,500,000 (northing)
-    if max(x_vals) < 1000 or max(y_vals) < 1000:
-        logger.error("❌ PROJECTION FAILED: Coordinates still appear to be in degrees!")
-        logger.error(
-            f"Expected UTM coordinates for Mongolia, got: X={max(x_vals):.1f}, Y={max(y_vals):.1f}"
-        )
-    else:
-        logger.info(
-            "✓ Projection appears successful - coordinates are in projected units"
-        )
-
 # Sample the graph if SAMPLE_NODES is specified
 if Config.SAMPLE_NODES is not None:
     import random
