@@ -78,6 +78,12 @@ def main():
     ig_nodes_to_gpkg(G_road_ig, remaining_stations_random_ig, "random_remaining")
     ig_nodes_to_gpkg(G_road_ig, stations_ig, "all_stations")
 
+    # Save all graphs to GraphML format
+    logger.info(f"Exporting graphs to GraphML...")
+    G_road_ig.write_graphml(f"{Config.OUTPUT_DIR}/base_{Config.PLACE.lower()}.graphml")
+    G_road_filtered_ig.write_graphml(f"{Config.OUTPUT_DIR}/knn_filtered_{Config.PLACE.lower()}.graphml")
+    G_road_random_ig.write_graphml(f"{Config.OUTPUT_DIR}/random_filtered_{Config.PLACE.lower()}.graphml")
+
     graphs = {
         "Original": G_road_ig,
         "KNN Filtered": G_road_filtered_ig,
