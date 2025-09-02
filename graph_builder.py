@@ -6,10 +6,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 def build_graph(Config):
     logger.info(f"Using local PBF file: {Config.LOCAL_PBF_PATH}")
     logger.info("Loading road network from PBF...")
-    G_road = ox.graph_from_xml(Config.LOCAL_PBF_PATH, simplify=Config.SIMPLIFY_ROAD_NETWORK)
+    G_road = ox.graph_from_xml(
+        Config.LOCAL_PBF_PATH, simplify=Config.SIMPLIFY_ROAD_NETWORK
+    )
 
     # Check initial CRS
     initial_crs = None

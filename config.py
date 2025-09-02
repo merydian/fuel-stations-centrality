@@ -61,6 +61,7 @@ class Config:
     def ensure_target_crs(cls, gdf, name="data"):
         """Ensure GeoDataFrame is in target projected CRS."""
         import logging
+
         logger = logging.getLogger(__name__)
         if str(gdf.crs) != cls.get_target_crs():
             logger.info(f"Projecting {name} from {gdf.crs} to {cls.get_target_crs()}")
@@ -98,7 +99,10 @@ class Config:
             raise ValueError("MAX_DISTANCE must be positive")
         if cls.MAX_STATIONS is not None and cls.MAX_STATIONS <= 0:
             raise ValueError("MAX_STATIONS must be positive or None")
-        if cls.MAX_STATIONS is not None and cls.MAX_STATIONS < cls.MIN_STATIONS_REQUIRED:
+        if (
+            cls.MAX_STATIONS is not None
+            and cls.MAX_STATIONS < cls.MIN_STATIONS_REQUIRED
+        ):
             raise ValueError(
                 f"MAX_STATIONS ({cls.MAX_STATIONS}) must be >= MIN_STATIONS_REQUIRED ({cls.MIN_STATIONS_REQUIRED})"
             )
