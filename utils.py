@@ -6,7 +6,7 @@ import pandas as pd
 from tabulate import tabulate
 from scipy.spatial import Voronoi
 from shapely.geometry import Polygon, Point
-from shapely.ops import voronoi_diagram
+from geovoronoi import voronoi_regions_from_coords
 import numpy as np
 
 
@@ -502,266 +502,37 @@ class Utils:
 
 
     def generate_voronoi_polygons(self, graphs_dict, country_name):
-        """
-        Generate Voronoi polygons for ALL nodes in each graph with country boundary as hull.
+        country_gdf = ox.geocode_to_gdf(country_name)        
+        country_gdf_proj = country_gdf.to_crs(f"EPSG:{self.config.EPSG_CODE}")
+        country_boundary_proj = country_gdf_proj.geometry.iloc[0]
         
-        Parameters:
-        -----------
-        graphs_dict : dict
-            Dictionary with graph names as keys and igraph.Graph objects as values
-            e.g., {"Original": G_road_ig, "KNN Filtered": G_road_filtered_ig, "Randomized Filtered": G_road_random_ig}
-        country_name : str
-            Name of the country to use as outer boundary (e.g., 'Germany', 'France')
-            
-        Returns:
-        --------
-        dict
-            Dictionary containing area statistics for each graph scenario
-        """    
-        logger.info(f"=== Generating Voronoi polygons for ALL nodes across {len(graphs_dict)} graphs ===")
-        logger.info(f"Country boundary: {country_name}")
-        logger.info(f"Graph scenarios: {list(graphs_dict.keys())}")
+        all_stats = []
         
-        # Get country geometry from web (SHARED FOR ALL GRAPHS - SAME OUTER HULL)
-        logger.debug("Fetching country geometry from web (shared boundary for all scenarios)...")
-        try:
-            # Use OSMnx to get country boundary
-            logger.debug(f"Fetching {country_name} boundary using OSMnx...")
-            country_gdf = ox.geocode_to_gdf(country_name)
-            country_boundary = country_gdf.geometry.iloc[0]
+        for name, graph in graphs_dict.items():
+            xs = graph.vs["x"]
+            ys = graph.vs["y"]
+            coords = np.column_stack((xs, ys))
+
+            regions, pts = voronoi_regions_from_coords(coords, country_boundary_proj)
+
+            regions_gdf = gpd.GeoDataFrame(geometry=list(regions.values()), crs=f"EPSG:{self.config.EPSG_CODE}")
+
+            regions_gdf.to_file(f"{self.config.OUTPUT_DIR}/voronoi_{name}.gpkg", driver="gpkg")
+
+            regions_gdf["area_m2"] = regions_gdf.area
+
+            area_stats = regions_gdf["area_m2"].describe()
             
-            # Reproject to match graph CRS
-            country_gdf_proj = country_gdf.to_crs(f"EPSG:{self.config.EPSG_CODE}")
-            country_boundary_proj = country_gdf_proj.geometry.iloc[0]
-            
-            logger.info(f"✓ Successfully fetched {country_name} boundary (SHARED HULL)")
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch country boundary: {e}")
-            # Fallback: create a large bounding box around ALL nodes from ALL graphs
-            logger.warning("Using fallback bounding box as boundary (computed from all graphs)")
-            
-            # Collect ALL coordinates from ALL graphs for consistent bounding box
-            all_x_coords = []
-            all_y_coords = []
-            for graph_name, G in graphs_dict.items():
-                all_x_coords.extend([G.vs[i]["x"] for i in range(G.vcount())])
-                all_y_coords.extend([G.vs[i]["y"] for i in range(G.vcount())])
-            
-            # Create expanded bounding box based on ALL graph data
-            margin = 50000  # 50km margin
-            min_x, max_x = min(all_x_coords) - margin, max(all_x_coords) + margin
-            min_y, max_y = min(all_y_coords) - margin, max(all_y_coords) + margin
-            
-            country_boundary_proj = Polygon([
-                (min_x, min_y), (max_x, min_y), 
-                (max_x, max_y), (min_x, max_y), (min_x, min_y)
-            ])
-            
-            logger.info(f"✓ Created fallback bounding box: ({min_x:.0f}, {min_y:.0f}) to ({max_x:.0f}, {max_y:.0f})")
+            # Add graph name to stats
+            area_stats_dict = area_stats.to_dict()
+            area_stats_dict["graph_scenario"] = name
+            all_stats.append(area_stats_dict)
+
+        # Combine all stats into one DataFrame
+        all_stats_df = pd.DataFrame(all_stats)
         
-        # Log the boundary area for verification
-        boundary_area_sqkm = country_boundary_proj.area / 1_000_000
-        logger.info(f"Shared outer hull area: {boundary_area_sqkm:,.2f} km² (will be same for all scenarios)")
+        # Set graph_scenario as index
+        all_stats_df.set_index("graph_scenario", inplace=True)
         
-        # Process each graph scenario with the SAME boundary
-        all_stats = {}
-        
-        for graph_name, G in graphs_dict.items():
-            logger.info(f"Processing graph scenario: {graph_name} (using shared boundary)")
-            logger.debug(f"  Graph size: {G.vcount()} nodes, {G.ecount()} edges")
-            
-            # Use ALL nodes in the graph
-            all_node_ids = list(range(G.vcount()))
-            logger.info(f"  Using ALL {len(all_node_ids)} nodes from graph {graph_name}")
-            
-            if len(all_node_ids) < 3:
-                logger.warning(f"  Skipping {graph_name}: insufficient nodes ({len(all_node_ids)}) for Voronoi diagram")
-                continue
-            
-            # Extract coordinates for ALL nodes
-            logger.debug(f"  Extracting coordinates for ALL {len(all_node_ids)} nodes")
-            points = []
-            node_data = []
-            
-            for node_id in all_node_ids:
-                vertex = G.vs[node_id]
-                x, y = vertex["x"], vertex["y"]
-                points.append([x, y])
-                
-                # Get vertex name if available
-                try:
-                    vertex_name = vertex["name"]
-                except KeyError:
-                    vertex_name = str(node_id)
-                    
-                node_data.append({
-                    "node_id": node_id,
-                    "name": vertex_name,
-                    "x": x,
-                    "y": y,
-                    "graph_scenario": graph_name
-                })
-            
-            points = np.array(points)
-            logger.debug(f"  Prepared {len(points)} point coordinates")
-            
-            # Add boundary points to ensure consistent outer hull
-            logger.debug(f"  Adding boundary points to ensure consistent Voronoi hull...")
-            
-            # Handle both Polygon and MultiPolygon geometries
-            if country_boundary_proj.geom_type == 'Polygon':
-                boundary_coords = list(country_boundary_proj.exterior.coords[:-1])  # Remove duplicate last point
-            elif country_boundary_proj.geom_type == 'MultiPolygon':
-                # Use the largest polygon from the MultiPolygon
-                largest_polygon = max(country_boundary_proj.geoms, key=lambda p: p.area)
-                boundary_coords = list(largest_polygon.exterior.coords[:-1])
-                logger.debug(f"  Using largest polygon from MultiPolygon (area: {largest_polygon.area/1_000_000:.2f} km²)")
-            else:
-                # Fallback: create a simple bounding box
-                logger.warning(f"  Unexpected geometry type: {country_boundary_proj.geom_type}, using bounding box")
-                bounds = country_boundary_proj.bounds
-                boundary_coords = [
-                    (bounds[0], bounds[1]),  # min_x, min_y
-                    (bounds[2], bounds[1]),  # max_x, min_y
-                    (bounds[2], bounds[3]),  # max_x, max_y
-                    (bounds[0], bounds[3])   # min_x, max_y
-                ]
-            
-            # Sample boundary points to add as "virtual" stations for consistent hull
-            # This ensures all Voronoi diagrams have the same outer boundary
-            n_boundary_points = min(20, len(boundary_coords))  # Use up to 20 boundary points
-            step = max(1, len(boundary_coords) // n_boundary_points)
-            sampled_boundary_points = boundary_coords[::step]
-            
-            # Combine actual node points with boundary points
-            all_points = np.vstack([points, np.array(sampled_boundary_points)])
-            logger.debug(f"  Total points for Voronoi: {len(points)} nodes + {len(sampled_boundary_points)} boundary = {len(all_points)}")
-            
-            # Create Voronoi diagram with boundary points included
-            logger.debug(f"  Computing Voronoi diagram for {graph_name} (with boundary points)...")
-            voronoi = Voronoi(all_points)
-            
-            # Convert Voronoi regions to Shapely polygons (only for original node points, not boundary points)
-            logger.debug(f"  Converting Voronoi regions to polygons (excluding boundary point regions)...")
-            voronoi_polygons = []
-            valid_indices = []
-            
-            # Process only the first len(points) regions (corresponding to actual nodes)
-            for i in range(len(points)):
-                region_idx = voronoi.point_region[i]
-                region = voronoi.regions[region_idx]
-                
-                # Skip infinite regions
-                if -1 in region or len(region) < 3:
-                    continue
-                    
-                # Create polygon from vertices
-                vertices = [voronoi.vertices[j] for j in region]
-                polygon = Polygon(vertices)
-                
-                # Clip to country boundary (SAME BOUNDARY FOR ALL SCENARIOS)
-                clipped_polygon = polygon.intersection(country_boundary_proj)
-                
-                if clipped_polygon.is_empty or clipped_polygon.area < 1:  # Skip tiny polygons
-                    continue
-                    
-                voronoi_polygons.append(clipped_polygon)
-                valid_indices.append(i)
-            
-            logger.info(f"  ✓ Created {len(voronoi_polygons)} valid Voronoi polygons for {graph_name}")
-            
-            # Verify all polygons are within the same boundary
-            total_voronoi_area = sum(poly.area for poly in voronoi_polygons) / 1_000_000
-            logger.debug(f"  Total Voronoi area: {total_voronoi_area:,.2f} km² (boundary area: {boundary_area_sqkm:,.2f} km²)")
-            
-            # Create GeoDataFrame
-            logger.debug(f"  Creating GeoDataFrame for export...")
-            valid_node_data = [node_data[i] for i in valid_indices]
-            
-            # Calculate areas (in square meters)
-            areas = [poly.area for poly in voronoi_polygons]
-            for i, area in enumerate(areas):
-                valid_node_data[i]["area_sqm"] = area
-                valid_node_data[i]["area_sqkm"] = area / 1_000_000
-                valid_node_data[i]["boundary_area_sqkm"] = boundary_area_sqkm  # Add boundary reference
-            
-            voronoi_gdf = gpd.GeoDataFrame(
-                valid_node_data,
-                geometry=voronoi_polygons,
-                crs=f"EPSG:{self.config.EPSG_CODE}"
-            )
-            
-            # Export to GeoPackage
-            output_path = f"{self.config.OUTPUT_DIR}/voronoi_polygons_{graph_name.lower().replace(' ', '_')}_{country_name.lower()}_{self.config.PLACE.lower()}.gpkg"
-            voronoi_gdf.to_file(output_path, layer="voronoi_polygons", driver="GPKG")
-            logger.info(f"  ✓ Voronoi polygons exported to: {output_path}")
-            
-            # Calculate area statistics
-            logger.debug(f"  Computing area statistics for {graph_name}...")
-            areas_sqkm = voronoi_gdf["area_sqkm"].values
-            
-            area_stats = {
-                "graph_scenario": graph_name,
-                "total_nodes": G.vcount(),
-                "valid_polygons": len(areas_sqkm),
-                "boundary_area_sqkm": boundary_area_sqkm,  # Same for all scenarios
-                "total_area_sqkm": float(np.sum(areas_sqkm)),
-                "mean_area_sqkm": float(np.mean(areas_sqkm)),
-                "median_area_sqkm": float(np.median(areas_sqkm)),
-                "std_area_sqkm": float(np.std(areas_sqkm)),
-                "min_area_sqkm": float(np.min(areas_sqkm)),
-                "max_area_sqkm": float(np.max(areas_sqkm)),
-                "q25_area_sqkm": float(np.percentile(areas_sqkm, 25)),
-                "q75_area_sqkm": float(np.percentile(areas_sqkm, 75)),
-                "coverage_ratio": float(np.sum(areas_sqkm) / boundary_area_sqkm),  # How much of boundary is covered
-                "polygon_success_rate": float(len(areas_sqkm) / G.vcount())  # Percentage of nodes that created valid polygons
-            }
-            
-            all_stats[graph_name] = area_stats
-        
-        # Print comparative statistics with boundary verification
-        print(f"\n{'='*90}")
-        print(f"VORONOI POLYGON AREA STATISTICS COMPARISON - {country_name.upper()}")
-        print(f"SHARED BOUNDARY AREA: {boundary_area_sqkm:,.2f} km² (SAME FOR ALL SCENARIOS)")
-        print(f"{'='*90}")
-        
-        # Create comparison table
-        comparison_data = []
-        for graph_name, stats in all_stats.items():
-            comparison_data.append({
-                "Graph Scenario": graph_name,
-                "Total Nodes": stats["total_nodes"],
-                "Valid Polygons": stats["valid_polygons"],
-                "Success Rate %": f"{stats['polygon_success_rate']*100:.1f}%",
-                "Total Area (km²)": f"{stats['total_area_sqkm']:,.2f}",
-                "Coverage %": f"{stats['coverage_ratio']*100:.1f}%",
-                "Mean Area (km²)": f"{stats['mean_area_sqkm']:,.2f}",
-                "Median Area (km²)": f"{stats['median_area_sqkm']:,.2f}",
-                "Std Dev (km²)": f"{stats['std_area_sqkm']:,.2f}"
-            })
-        
-        comparison_df = pd.DataFrame(comparison_data)
-        print(tabulate(comparison_df, headers="keys", tablefmt="grid", showindex=False))
-        
-        # Save comparison statistics to CSV
-        stats_output = f"{self.config.OUTPUT_DIR}/voronoi_area_stats_comparison_{country_name.lower()}_{self.config.PLACE.lower()}.csv"
-        comparison_df.to_csv(stats_output, index=False)
-        logger.info(f"✓ Comparison statistics saved to: {stats_output}")
-        
-        # Save detailed statistics for each graph
-        for graph_name, stats in all_stats.items():
-            detailed_stats_df = pd.DataFrame([stats])
-            detailed_output = f"{self.config.OUTPUT_DIR}/voronoi_area_stats_{graph_name.lower().replace(' ', '_')}_{country_name.lower()}_{self.config.PLACE.lower()}.csv"
-            detailed_stats_df.to_csv(detailed_output, index=False)
-        
-        # Verify boundary consistency
-        boundary_areas = [stats["boundary_area_sqkm"] for stats in all_stats.values()]
-        if len(set(boundary_areas)) == 1:
-            logger.info(f"✓ BOUNDARY CONSISTENCY VERIFIED: All scenarios use the same {boundary_areas[0]:,.2f} km² boundary")
-        else:
-            logger.error(f"✗ BOUNDARY INCONSISTENCY DETECTED: Different boundary areas found: {boundary_areas}")
-        
-        logger.info("=== Voronoi polygon generation completed for all graph scenarios ===")
-        
-        return all_stats
+        # Save combined stats to one CSV
+        all_stats_df.to_csv(f"{self.config.OUTPUT_DIR}/voronoi_area_stats_all_{self.config.PLACE.lower()}.csv")
