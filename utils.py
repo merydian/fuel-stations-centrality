@@ -457,8 +457,12 @@ class Utils:
             max_edges = num_nodes * (num_nodes - 1) / 2  # For undirected graph
             density = num_edges / max_edges if max_edges > 0 else 0
 
+            # Calculate number of connected components
+            logger.debug("  Computing connected components...")
+            num_components = len(graph.components())
+
             logger.debug(
-                f"  Computed metrics - Total length: {total_length_km:.2f} km, Density: {density:.6f}"
+                f"  Computed metrics - Total length: {total_length_km:.2f} km, Density: {density:.6f}, Components: {num_components}"
             )
 
             # Store results
@@ -470,6 +474,7 @@ class Utils:
                     "Total Length (km)": f"{total_length_km:.2f}",
                     "Avg Edge Length (m)": f"{avg_edge_length:.1f}",
                     "Density": f"{density:.6f}",
+                    "Components": num_components,
                 }
             )
 
@@ -488,7 +493,7 @@ class Utils:
         logger.debug("Generating LaTeX table for graph information")
         latex_table = df.to_latex(
             index=False,
-            column_format="lrrrrr",
+            column_format="lrrrrrc",
             caption="Graph Information Summary for Different Scenarios",
             label="tab:graph_info",
             escape=False,
