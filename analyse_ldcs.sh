@@ -16,59 +16,60 @@ START_TIME_HUMAN=$(date '+%Y-%m-%d %H:%M:%S')
 MAX_DISTANCE=150000
 N_REMOVE=120
 MAX_STATIONS=1000000
+EPSG_CODE=4087
 
-# Array of configurations: "place_name|url|epsg_code"
+# Array of configurations: "place_name|url"
 configs=(
     # Africa
-    "angola|https://download.geofabrik.de/africa/angola-latest.osm.pbf|9159"
-    "benin|https://download.geofabrik.de/africa/benin-latest.osm.pbf|32631"
-    "burkina-faso|https://download.geofabrik.de/africa/burkina-faso-latest.osm.pbf|32630"
-    "burundi|https://download.geofabrik.de/africa/burundi-latest.osm.pbf|32736"
-    "central-african-republic|https://download.geofabrik.de/africa/central-african-republic-latest.osm.pbf|0000"
-    "chad|https://download.geofabrik.de/africa/chad-latest.osm.pbf|0000"
-    "comores|https://download.geofabrik.de/africa/comores-latest.osm.pbf|0000"
-    "congo-democratic-republic|https://download.geofabrik.de/africa/congo-democratic-republic-latest.osm.pbf|0000"
-    "djibouti|https://download.geofabrik.de/africa/djibouti-latest.osm.pbf|0000"
-    "eritrea|https://download.geofabrik.de/africa/eritrea-latest.osm.pbf|0000"
-    "ethiopia|https://download.geofabrik.de/africa/ethiopia-latest.osm.pbf|0000"
-    "senegal-and-gambia|https://download.geofabrik.de/africa/senegal-and-gambia-latest.osm.pbf|0000"
-    "guinea|https://download.geofabrik.de/africa/guinea-latest.osm.pbf|0000"
-    "guinea-bissau|https://download.geofabrik.de/africa/guinea-bissau-latest.osm.pbf|0000"
-    "lesotho|https://download.geofabrik.de/africa/lesotho-latest.osm.pbf|0000"
-    "liberia|https://download.geofabrik.de/africa/liberia-latest.osm.pbf|0000"
-    "madagascar|https://download.geofabrik.de/africa/madagascar-latest.osm.pbf|0000"
-    "malawi|https://download.geofabrik.de/africa/malawi-latest.osm.pbf|0000"
-    "mali|https://download.geofabrik.de/africa/mali-latest.osm.pbf|0000"
-    "mauritania|https://download.geofabrik.de/africa/mauritania-latest.osm.pbf|0000"
-    "mozambique|https://download.geofabrik.de/africa/mozambique-latest.osm.pbf|0000"
-    "niger|https://download.geofabrik.de/africa/niger-latest.osm.pbf|0000"
-    "rwanda|https://download.geofabrik.de/africa/rwanda-latest.osm.pbf|0000"
-    "sierra-leone|https://download.geofabrik.de/africa/sierra-leone-latest.osm.pbf|0000"
-    "somalia|https://download.geofabrik.de/africa/somalia-latest.osm.pbf|0000"
-    "south-sudan|https://download.geofabrik.de/africa/south-sudan-latest.osm.pbf|0000"
-    "sudan|https://download.geofabrik.de/africa/sudan-latest.osm.pbf|0000"
-    "togo|https://download.geofabrik.de/africa/togo-latest.osm.pbf|0000"
-    "uganda|https://download.geofabrik.de/africa/uganda-latest.osm.pbf|0000"
-    "tanzania|https://download.geofabrik.de/africa/tanzania-latest.osm.pbf|0000"
-    "zambia|https://download.geofabrik.de/africa/zambia-latest.osm.pbf|0000"
+    "angola|https://download.geofabrik.de/africa/angola-latest.osm.pbf"
+    "benin|https://download.geofabrik.de/africa/benin-latest.osm.pbf"
+    "burkina-faso|https://download.geofabrik.de/africa/burkina-faso-latest.osm.pbf"
+    "burundi|https://download.geofabrik.de/africa/burundi-latest.osm.pbf"
+    "central-african-republic|https://download.geofabrik.de/africa/central-african-republic-latest.osm.pbf"
+    "chad|https://download.geofabrik.de/africa/chad-latest.osm.pbf"
+    "comores|https://download.geofabrik.de/africa/comores-latest.osm.pbf"
+    "congo-democratic-republic|https://download.geofabrik.de/africa/congo-democratic-republic-latest.osm.pbf"
+    "djibouti|https://download.geofabrik.de/africa/djibouti-latest.osm.pbf"
+    "eritrea|https://download.geofabrik.de/africa/eritrea-latest.osm.pbf"
+    "ethiopia|https://download.geofabrik.de/africa/ethiopia-latest.osm.pbf"
+    "senegal-and-gambia|https://download.geofabrik.de/africa/senegal-and-gambia-latest.osm.pbf"
+    "guinea|https://download.geofabrik.de/africa/guinea-latest.osm.pbf"
+    "guinea-bissau|https://download.geofabrik.de/africa/guinea-bissau-latest.osm.pbf"
+    "lesotho|https://download.geofabrik.de/africa/lesotho-latest.osm.pbf"
+    "liberia|https://download.geofabrik.de/africa/liberia-latest.osm.pbf"
+    "madagascar|https://download.geofabrik.de/africa/madagascar-latest.osm.pbf"
+    "malawi|https://download.geofabrik.de/africa/malawi-latest.osm.pbf"
+    "mali|https://download.geofabrik.de/africa/mali-latest.osm.pbf"
+    "mauritania|https://download.geofabrik.de/africa/mauritania-latest.osm.pbf"
+    "mozambique|https://download.geofabrik.de/africa/mozambique-latest.osm.pbf"
+    "niger|https://download.geofabrik.de/africa/niger-latest.osm.pbf"
+    "rwanda|https://download.geofabrik.de/africa/rwanda-latest.osm.pbf"
+    "sierra-leone|https://download.geofabrik.de/africa/sierra-leone-latest.osm.pbf"
+    "somalia|https://download.geofabrik.de/africa/somalia-latest.osm.pbf"
+    "south-sudan|https://download.geofabrik.de/africa/south-sudan-latest.osm.pbf"
+    "sudan|https://download.geofabrik.de/africa/sudan-latest.osm.pbf"
+    "togo|https://download.geofabrik.de/africa/togo-latest.osm.pbf"
+    "uganda|https://download.geofabrik.de/africa/uganda-latest.osm.pbf"
+    "tanzania|https://download.geofabrik.de/africa/tanzania-latest.osm.pbf"
+    "zambia|https://download.geofabrik.de/africa/zambia-latest.osm.pbf"
     
     # Asia
-    "afghanistan|https://download.geofabrik.de/asia/afghanistan-latest.osm.pbf|0000"
-    "bangladesh|https://download.geofabrik.de/asia/bangladesh-latest.osm.pbf|0000"
-    "cambodia|https://download.geofabrik.de/asia/cambodia-latest.osm.pbf|0000"
-    "laos|https://download.geofabrik.de/asia/laos-latest.osm.pbf|0000"
-    "myanmar|https://download.geofabrik.de/asia/myanmar-latest.osm.pbf|0000"
-    "nepal|https://download.geofabrik.de/asia/nepal-latest.osm.pbf|0000"
-    "yemen|https://download.geofabrik.de/asia/yemen-latest.osm.pbf|0000"
-    "east-timor|https://download.geofabrik.de/asia/east-timor-latest.osm.pbf|0000"
+    "afghanistan|https://download.geofabrik.de/asia/afghanistan-latest.osm.pbf"
+    "bangladesh|https://download.geofabrik.de/asia/bangladesh-latest.osm.pbf"
+    "cambodia|https://download.geofabrik.de/asia/cambodia-latest.osm.pbf"
+    "laos|https://download.geofabrik.de/asia/laos-latest.osm.pbf"
+    "myanmar|https://download.geofabrik.de/asia/myanmar-latest.osm.pbf"
+    "nepal|https://download.geofabrik.de/asia/nepal-latest.osm.pbf"
+    "yemen|https://download.geofabrik.de/asia/yemen-latest.osm.pbf"
+    "east-timor|https://download.geofabrik.de/asia/east-timor-latest.osm.pbf"
     
     # Caribbean
-    "haiti-and-domrep|https://download.geofabrik.de/central-america/haiti-and-domrep-latest.osm.pbf|0000"
+    "haiti-and-domrep|https://download.geofabrik.de/central-america/haiti-and-domrep-latest.osm.pbf"
     
     # Pacific
-    "kiribati|https://download.geofabrik.de/australia-oceania/kiribati-latest.osm.pbf|0000"
-    "solomon-islands|https://download.geofabrik.de/australia-oceania/solomon-islands-latest.osm.pbf|0000"
-    "tuvalu|https://download.geofabrik.de/australia-oceania/tuvalu-latest.osm.pbf|0000"
+    "kiribati|https://download.geofabrik.de/australia-oceania/kiribati-latest.osm.pbf"
+    "solomon-islands|https://download.geofabrik.de/australia-oceania/solomon-islands-latest.osm.pbf"
+    "tuvalu|https://download.geofabrik.de/australia-oceania/tuvalu-latest.osm.pbf"
 )
 
 # Colors for output
@@ -89,6 +90,7 @@ echo -e "${BLUE}Global settings:${NC}"
 echo "  Max Distance: $MAX_DISTANCE"
 echo "  Stations to Remove: $N_REMOVE"
 echo "  Max Stations: $MAX_STATIONS"
+echo "  EPSG Code: $EPSG_CODE"
 echo ""
 
 # Counter for progress
@@ -98,11 +100,11 @@ total=${#configs[@]}
 # Loop through each configuration
 for config in "${configs[@]}"; do
     # Split the configuration string
-    IFS='|' read -r place url epsg_code <<< "$config"
+    IFS='|' read -r place url <<< "$config"
     
     echo -e "${YELLOW}[$counter/$total] Processing: $place${NC}"
     echo "URL: $url"
-    echo "EPSG Code: $epsg_code"
+    echo "EPSG Code: $EPSG_CODE"
     echo ""
     
     # Use download_convert.sh to download and process the file
@@ -130,7 +132,7 @@ for config in "${configs[@]}"; do
         --place "$place" \
         --max-distance "$MAX_DISTANCE" \
         --n-remove "$N_REMOVE" \
-        --epsg-code "$epsg_code" \
+        --epsg-code "$EPSG_CODE" \
         --max-stations "$MAX_STATIONS"
     
     exit_code=$?
