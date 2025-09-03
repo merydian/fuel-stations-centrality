@@ -61,9 +61,14 @@ class Utils:
                 c = geom.centroid
                 return c.x, c.y
 
-        gas_stations["nearest_node"] = gas_stations.geometry.apply(
-            lambda geom: ox.distance.nearest_nodes(G, *get_xy(geom))
-        )
+        # Extract all coordinates at once
+        coords = gas_stations.geometry.apply(get_xy)
+        x_coords = [coord[0] for coord in coords]
+        y_coords = [coord[1] for coord in coords]
+
+        # Call nearest_nodes once with all coordinates
+        gas_stations["nearest_node"] = ox.distance.nearest_nodes(G, x_coords, y_coords)
+        
         logger.debug("Completed nearest node mapping for all gas stations")
 
         # Remove stations further than self.config.STATIONS_MAX_RADIUS from their nearest node
