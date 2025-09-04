@@ -254,7 +254,7 @@ class Utils:
 
         # Compute shortest path lengths from all stations
         logger.debug("Computing shortest path distances from all stations")
-        distances = G.distances(source=stations, weights="length", mode="all")
+        distances = G.distances(source=stations, target=stations, weights="length", mode="all")
 
         # Find nodes within max_dist of any station
         logger.debug(f"Finding nodes within {max_dist} units of any station")
