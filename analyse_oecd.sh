@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --partition=cpu-single
-#SBATCH --cpus-per-task=64
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=200G
 #SBATCH --time=05:30:00
 
@@ -21,12 +21,12 @@ EPSG_CODE=4087
 # Array of configurations: "place_name|url"
 configs=(
     # Europe
-    "austria|https://download.geofabrik.de/europe/austria-latest.osm.pbf"
-    "belgium|https://download.geofabrik.de/europe/belgium-latest.osm.pbf"
-    "czech-republic|https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf"
-    "denmark|https://download.geofabrik.de/europe/denmark-latest.osm.pbf"
-    "estonia|https://download.geofabrik.de/europe/estonia-latest.osm.pbf"
-    "finland|https://download.geofabrik.de/europe/finland-latest.osm.pbf"
+    #"austria|https://download.geofabrik.de/europe/austria-latest.osm.pbf"
+    #"belgium|https://download.geofabrik.de/europe/belgium-latest.osm.pbf"
+    #"czech-republic|https://download.geofabrik.de/europe/czech-republic-latest.osm.pbf"
+    #"denmark|https://download.geofabrik.de/europe/denmark-latest.osm.pbf"
+    #"estonia|https://download.geofabrik.de/europe/estonia-latest.osm.pbf"
+    #"finland|https://download.geofabrik.de/europe/finland-latest.osm.pbf"
     "france|https://download.geofabrik.de/europe/france-latest.osm.pbf"
     "germany|https://download.geofabrik.de/europe/germany-latest.osm.pbf"
     "greece|https://download.geofabrik.de/europe/greece-latest.osm.pbf"
