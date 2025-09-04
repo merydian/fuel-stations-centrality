@@ -7,9 +7,10 @@ from tabulate import tabulate
 from scipy.spatial import Voronoi
 from shapely.geometry import Polygon, Point
 from shapely.ops import unary_union
-from scipy.spatial import ConvexHull
 from geovoronoi import voronoi_regions_from_coords
 import numpy as np
+import multiprocessing as mp
+from functools import partial
 
 
 logger = logging.getLogger(__name__)
@@ -227,12 +228,11 @@ class Utils:
         output_path = f"{self.config.OUTPUT_DIR}/{name}_nodes.gpkg"
         node_gdf.to_file(output_path, layer=name, driver="GPKG")
         logger.info(f"✓ Nodes exported to: {output_path}")
-
-    def prune_igraph_by_distance(self, G, stations: list, max_dist: int):
+    
+    def prune_igraph_by_distance(self, G, stations: list, max_dist: int, n_processes=None):
         """
         Remove edges from igraph G that are further than `max_dist` graph-distance
-        away from any node in `stations`. Memory-efficient version that processes
-        one station at a time.
+        away from any node in `stations`. Parallelized version.
     
         Parameters
         ----------
@@ -242,6 +242,8 @@ class Utils:
             List of station vertex indices.
         max_dist : int
             Maximum allowed graph distance from any station.
+        n_processes : int, optional
+            Number of processes to use. If None, uses CPU count.
     
         Returns
         -------
@@ -249,37 +251,40 @@ class Utils:
             The pruned graph (same object as G).
         """
         logger.info(
-            f"Pruning graph by distance: max_dist={max_dist}, stations={len(stations)}"
+            f"Pruning graph by distance (parallel): max_dist={max_dist}, stations={len(stations)}"
         )
         logger.debug(f"Initial graph: {G.vcount()} nodes, {G.ecount()} edges")
     
-        # Process stations one by one to minimize memory usage
-        logger.debug("Computing shortest path distances station by station")
+        if n_processes is None:
+            n_processes = min(mp.cpu_count(), len(stations))
+        
+        logger.info(f"Using {n_processes} processes for parallel computation")
+    
+        # Prepare serializable graph data
+        edges = [(e.source, e.target) for e in G.es]
+        weights = G.es["length"]
+        n_nodes = G.vcount()
+        edge_data = (edges, weights)
+        
+        # Prepare arguments for parallel processing
+        args_list = [(station, edge_data, n_nodes, max_dist) for station in stations]
+        
+        # Process stations in parallel
+        logger.debug("Starting parallel distance computation")
         valid_nodes = set()
         
-        for i, station in enumerate(stations):
-            # Log progress every 100 stations
-            if i % 100 == 0 and i > 0:
-                logger.debug(f"Processed {i}/{len(stations)} stations, found {len(valid_nodes)} valid nodes so far")
+        with mp.Pool(processes=n_processes) as pool:
+            # Process in chunks to show progress
+            chunk_size = max(1, len(stations) // (n_processes * 4))
+            results = pool.map(_compute_station_distances, args_list, chunksize=chunk_size)
             
-            try:
-                # Compute distances from this single station to all nodes
-                station_distances = G.distances(source=[station], weights="length", mode="out")[0]
-                
-                # Find nodes within max_dist of this station
-                for node_idx, dist in enumerate(station_distances):
-                    if dist <= max_dist:
-                        valid_nodes.add(node_idx)
-                
-                # Explicitly delete the distance array to free memory immediately
-                del station_distances
-                
-            except MemoryError:
-                logger.error(f"Memory error processing station {station} (index {i})")
-                logger.error("Graph may be too large even for single-station processing")
-                raise MemoryError(f"Insufficient memory to process station {station}")
+            # Combine results
+            for i, station_valid_nodes in enumerate(results):
+                valid_nodes.update(station_valid_nodes)
+                if (i + 1) % 100 == 0:
+                    logger.debug(f"Processed {i + 1}/{len(stations)} stations, found {len(valid_nodes)} valid nodes so far")
     
-        logger.debug(f"Completed processing all {len(stations)} stations")
+        logger.debug(f"Completed parallel processing of all {len(stations)} stations")
         logger.debug(f"Found {len(valid_nodes)} valid nodes within distance threshold")
     
         # Find edges where both endpoints are outside valid set
@@ -299,7 +304,7 @@ class Utils:
     
         final_edges = G.ecount()
         logger.info(
-            f"✓ Memory-efficient graph pruning complete: {initial_edges} → {final_edges} edges (removed {initial_edges - final_edges})"
+            f"✓ Parallel graph pruning complete: {initial_edges} → {final_edges} edges (removed {initial_edges - final_edges})"
         )
     
         return G
@@ -604,3 +609,42 @@ class Utils:
         all_stats_df.to_csv(output_csv_path)
         logger.info(f"Saved combined area statistics to CSV: {output_csv_path}")
 
+def _compute_station_distances(args):
+    """
+    Helper function for parallel distance computation.
+    
+    Parameters
+    ----------
+    args : tuple
+        (station_idx, G_serialized, max_dist) where G_serialized contains
+        the edge list and weights needed to reconstruct distances
+    
+    Returns
+    -------
+    set
+        Set of valid node indices within max_dist of this station
+    """
+    station_idx, edge_data, n_nodes, max_dist = args
+    
+    # Recreate a minimal igraph for distance computation
+    import igraph as ig
+    
+    edges, weights = edge_data
+    G_temp = ig.Graph(n=n_nodes, edges=edges, directed=False)
+    G_temp.es["length"] = weights
+    
+    try:
+        # Compute distances from this station to all nodes
+        distances = G_temp.distances(source=[station_idx], weights="length", mode="out")[0]
+        
+        # Find nodes within max_dist
+        valid_nodes = set()
+        for node_idx, dist in enumerate(distances):
+            if dist <= max_dist:
+                valid_nodes.add(node_idx)
+        
+        return valid_nodes
+        
+    except Exception as e:
+        logger.error(f"Error processing station {station_idx}: {e}")
+        return set()
