@@ -231,8 +231,9 @@ class Utils:
     def prune_igraph_by_distance(self, G, stations: list, max_dist: int):
         """
         Remove edges from igraph G that are further than `max_dist` graph-distance
-        away from any node in `stations`.
-
+        away from any node in `stations`. Memory-efficient version that processes
+        one station at a time.
+    
         Parameters
         ----------
         G : igraph.Graph
@@ -241,7 +242,7 @@ class Utils:
             List of station vertex indices.
         max_dist : int
             Maximum allowed graph distance from any station.
-
+    
         Returns
         -------
         igraph.Graph
@@ -251,40 +252,56 @@ class Utils:
             f"Pruning graph by distance: max_dist={max_dist}, stations={len(stations)}"
         )
         logger.debug(f"Initial graph: {G.vcount()} nodes, {G.ecount()} edges")
-
-        # Compute shortest path lengths from all stations
-        logger.debug("Computing shortest path distances from all stations")
-        distances = G.distances(source=stations, target=stations, weights="length", mode="all")
-
-        # Find nodes within max_dist of any station
-        logger.debug(f"Finding nodes within {max_dist} units of any station")
+    
+        # Process stations one by one to minimize memory usage
+        logger.debug("Computing shortest path distances station by station")
         valid_nodes = set()
-        for i, station_distances in enumerate(distances):
-            for node_idx, dist in enumerate(station_distances):
-                if dist <= max_dist:
-                    valid_nodes.add(node_idx)
-
+        
+        for i, station in enumerate(stations):
+            # Log progress every 100 stations
+            if i % 100 == 0 and i > 0:
+                logger.debug(f"Processed {i}/{len(stations)} stations, found {len(valid_nodes)} valid nodes so far")
+            
+            try:
+                # Compute distances from this single station to all nodes
+                station_distances = G.distances(source=[station], weights="length", mode="out")[0]
+                
+                # Find nodes within max_dist of this station
+                for node_idx, dist in enumerate(station_distances):
+                    if dist <= max_dist:
+                        valid_nodes.add(node_idx)
+                
+                # Explicitly delete the distance array to free memory immediately
+                del station_distances
+                
+            except MemoryError:
+                logger.error(f"Memory error processing station {station} (index {i})")
+                logger.error("Graph may be too large even for single-station processing")
+                raise MemoryError(f"Insufficient memory to process station {station}")
+    
+        logger.debug(f"Completed processing all {len(stations)} stations")
         logger.debug(f"Found {len(valid_nodes)} valid nodes within distance threshold")
-
+    
         # Find edges where both endpoints are outside valid set
+        logger.debug("Identifying edges to remove")
         edges_to_remove = []
         for edge in G.es:
             if edge.source not in valid_nodes or edge.target not in valid_nodes:
                 edges_to_remove.append(edge.index)
-
+    
         initial_edges = G.ecount()
         logger.debug(
             f"Removing {len(edges_to_remove)} edges that don't connect valid nodes"
         )
-
+    
         # Remove invalid edges
         G.delete_edges(edges_to_remove)
-
+    
         final_edges = G.ecount()
         logger.info(
-            f"✓ Graph pruning complete: {initial_edges} → {final_edges} edges (removed {initial_edges - final_edges})"
+            f"✓ Memory-efficient graph pruning complete: {initial_edges} → {final_edges} edges (removed {initial_edges - final_edges})"
         )
-
+    
         return G
 
     def nx_knn_nodes_to_gpkg(self, G, selected_nodes, name):
