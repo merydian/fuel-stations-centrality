@@ -26,9 +26,19 @@ log "Starting script"
 mkdir -p "$DATA_DIR" || error_exit "Failed to create data directory"
 cd "$DATA_DIR" || error_exit "Failed to enter data directory"
 
-# Download file (overwrite if exists)
-log "Downloading $URL"
-curl -L -o "$FILENAME" "$URL" || error_exit "Download failed"
+# Check if .pbf exists and is not corrupted
+if [ -f "$FILENAME" ]; then
+    log "$FILENAME exists, checking integrity..."
+    if osmium fileinfo "$FILENAME" >/dev/null 2>&1; then
+        log "$FILENAME exists and is valid, skipping download"
+    else
+        log "$FILENAME exists but is corrupted, re-downloading"
+        curl -L -o "$FILENAME" "$URL" || error_exit "Download failed"
+    fi
+else
+    log "Downloading $URL"
+    curl -L -o "$FILENAME" "$URL" || error_exit "Download failed"
+fi
 
 # Filter highways and write PBF (overwrite if exists)
 FILTERED_PBF="${FILENAME%.osm.pbf}_filtered.osm.pbf"
@@ -46,4 +56,4 @@ OUTPUT_XML="${FILENAME%.osm.pbf}.osm"
 log "Converting $FILTERED_PBF to XML $OUTPUT_XML"
 osmium cat "$FILTERED_PBF" -o "$OUTPUT_XML" --overwrite || error_exit "Conversion to XML failed"
 
-log "Script completed successfully"
+log
