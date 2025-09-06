@@ -32,17 +32,17 @@ def analysis(Config):
     stations_ig = list(set(stations_ig))
 
     # 1. Prune base network
-    G_road_ig = utils.prune_igraph_by_distance(
+    G_road_ig_pruned = utils.prune_igraph_by_distance(
         G_road_ig, stations_ig, Config.MAX_DISTANCE
     )
 
     # 2. Prune base network based on knn stations
     stations_knn_ig = nodes_highest_avg_knn_distance_ig(
-        G_road_ig, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations_ig
+        G_road_ig_pruned, knn=Config.K_NN, n=Config.N_REMOVE, node_subset=stations_ig
     )
     remaining_stations_knn_ig = set(stations_ig) - set(stations_knn_ig)
     G_road_filtered_ig = utils.prune_igraph_by_distance(
-        G_road_ig.copy(), remaining_stations_knn_ig, Config.MAX_DISTANCE
+        G_road_ig_pruned.copy(), remaining_stations_knn_ig, Config.MAX_DISTANCE
     )
 
     # 3. Prune base network based on random stations
@@ -50,7 +50,7 @@ def analysis(Config):
     random_stations_ig = random.sample(stations_ig, Config.N_REMOVE)
     remaining_stations_random_ig = set(stations_ig) - set(random_stations_ig)
     G_road_random_ig = utils.prune_igraph_by_distance(
-        G_road_ig.copy(), remaining_stations_random_ig, Config.MAX_DISTANCE
+        G_road_ig_pruned.copy(), remaining_stations_random_ig, Config.MAX_DISTANCE
     )
 
     # Assertions to check validity of analysis
@@ -62,15 +62,16 @@ def analysis(Config):
     logger.info("Exporting igraph edges to GeoPackage...")
     utils.igraph_edges_to_gpkg(G_road_random_ig, "random")
     utils.igraph_edges_to_gpkg(G_road_filtered_ig, "knn")
+    utils.igraph_edges_to_gpkg(G_road_ig_pruned, "base_pruned")
     utils.igraph_edges_to_gpkg(G_road_ig, "base")
 
     logger.info("Exporting igraph nodes to GeoPackage...")
-    utils.ig_nodes_to_gpkg(G_road_ig, remaining_stations_knn_ig, "knn_remaining")
-    utils.ig_nodes_to_gpkg(G_road_ig, remaining_stations_random_ig, "random_remaining")
-    utils.ig_nodes_to_gpkg(G_road_ig, stations_ig, "all_stations")
+    utils.ig_nodes_to_gpkg(G_road_ig_pruned, remaining_stations_knn_ig, "knn_remaining")
+    utils.ig_nodes_to_gpkg(G_road_ig_pruned, remaining_stations_random_ig, "random_remaining")
+    utils.ig_nodes_to_gpkg(G_road_ig_pruned, stations_ig, "all_stations")
 
     logger.info("Exporting graphs to GraphML...")
-    G_road_ig.write_graphml(f"{Config.OUTPUT_DIR}/base_{Config.PLACE.lower()}.graphml")
+    G_road_ig_pruned.write_graphml(f"{Config.OUTPUT_DIR}/base_{Config.PLACE.lower()}.graphml")
     G_road_filtered_ig.write_graphml(
         f"{Config.OUTPUT_DIR}/knn_filtered_{Config.PLACE.lower()}.graphml"
     )
@@ -80,6 +81,7 @@ def analysis(Config):
 
     graphs = {
         "Original": G_road_ig,
+        "Original Pruned": G_road_ig_pruned,
         "KNN Filtered": G_road_filtered_ig,
         "Randomized Filtered": G_road_random_ig,
     }
@@ -99,5 +101,5 @@ def analysis(Config):
     logger.info(
         f"Total time taken: {int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
     )
-    logger.info(f"Nodes: {G_road_ig.vcount()}")
-    logger.info(f"Edges: {G_road_ig.ecount()}")
+    logger.info(f"Nodes: {G_road_ig_pruned.vcount()}")
+    logger.info(f"Edges: {G_road_ig_pruned.ecount()}")
