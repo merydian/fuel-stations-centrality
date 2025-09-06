@@ -256,7 +256,12 @@ class Utils:
         logger.debug(f"Initial graph: {G.vcount()} nodes, {G.ecount()} edges")
     
         if n_processes is None:
-            n_processes = min(mp.cpu_count(), len(stations))
+            n_processes = max(1, min(mp.cpu_count(), len(stations)))
+        else:
+            n_processes = max(1, n_processes)  # Ensure at least 1 process
+        
+        if n_processes == 0:
+            n_processes = 1
         
         logger.info(f"Using {n_processes} processes for parallel computation")
     
