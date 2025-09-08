@@ -198,7 +198,7 @@ class GraphComparison:
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         logger.info(f"✓ Scenario difference histograms saved to: {output_file}")
         
-        plt.show()
+        # plt.show()
         
         # Create a summary table
         summary_stats = []
@@ -263,7 +263,7 @@ class GraphComparison:
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         logger.info(f"✓ Stations scatter plot saved to: {output_file}")
         
-        plt.show()
+        # plt.show()
         
         return output_file
 
@@ -381,7 +381,7 @@ class GraphComparison:
             
             output_files.append(output_file)
             
-            plt.show()
+            # plt.show()
         
         return output_files
 
@@ -438,6 +438,224 @@ class GraphComparison:
         logger.info(f"Summary tables saved to {self.output_dir}")
         
         return summary_stats, country_comparison
+    
+    def create_latex_table(self, combined_data, output_dir):
+        """
+        Create a LaTeX table from combined_data showing only specified columns,
+        with country names displayed only once per country-dataset combination.
+        """
+        logger.info("Creating LaTeX table...")
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Select and prepare the data
+        table_data = combined_data.copy()
+        
+        # Calculate average edge length
+        table_data['Avg Edge Length (km)'] = table_data['Total Length (km)'] / table_data['Edges']
+        table_data['Avg Edge Length (km)'] = table_data['Avg Edge Length (km)'].round(2)
+        
+        # Round other numeric columns
+        table_data['Total Length (km)'] = table_data['Total Length (km)'].round(0).astype(int)
+        table_data['Edges'] = table_data['Edges'].astype(int)
+        
+        # Select only required columns
+        columns_to_show = [
+            'Country', 'Dataset', 'Graph Scenario', 'Edges', 
+            'Total Length (km)', 'Avg Edge Length (km)', 'Stations_Used'
+        ]
+        table_data = table_data[columns_to_show]
+        
+        # Sort data for better organization
+        table_data = table_data.sort_values(['Country', 'Dataset', 'Graph Scenario'])
+        
+        # Create longtable version
+        latex_content = []
+        latex_content.append("\\begin{longtable}{@{}p{1.8cm}p{1.2cm}p{1.4cm}r@{\\,}r@{\\,}r@{\\,}r@{}}")
+        latex_content.append("\\caption{Graph Statistics by Country, Dataset and Scenario}")
+        latex_content.append("\\label{tab:graph_statistics} \\\\")
+        latex_content.append("\\toprule")
+        latex_content.append("Country & Dataset & Scenario & Edges & Total Length & Avg Edge & Stations \\\\")
+        latex_content.append(" & & & & (km) & Length (km) & Used \\\\")
+        latex_content.append("\\midrule")
+        latex_content.append("\\endfirsthead")
+        latex_content.append("")
+        latex_content.append("\\multicolumn{7}{c}{{\\tablename\\ \\thetable{} -- continued from previous page}} \\\\")
+        latex_content.append("\\toprule")
+        latex_content.append("Country & Dataset & Scenario & Edges & Total Length & Avg Edge & Stations \\\\")
+        latex_content.append(" & & & & (km) & Length (km) & Used \\\\")
+        latex_content.append("\\midrule")
+        latex_content.append("\\endhead")
+        latex_content.append("")
+        latex_content.append("\\midrule")
+        latex_content.append("\\multicolumn{7}{r@{}}{{Continued on next page}} \\\\")
+        latex_content.append("\\endfoot")
+        latex_content.append("")
+        latex_content.append("\\bottomrule")
+        latex_content.append("\\endlastfoot")
+        
+        # Track previous values to avoid repetition
+        prev_country = None
+        prev_dataset = None
+        prev_stations = None
+        
+        # Helper function to format dataset names with math mode (remove 150000)
+        def format_dataset_name(dataset_raw):
+            if '_' in dataset_raw:
+                parts = dataset_raw.split('_')
+                # Just return the first part (LDCS or OECD) without the number
+                return parts[0].upper()
+            return dataset_raw.upper()
+        
+        # Process each row
+        for _, row in table_data.iterrows():
+            # Format country name (replace hyphens with double hyphens)
+            country_raw = row['Country']
+            country = country_raw.replace('-', '--').title()
+            
+            dataset_raw = row['Dataset']
+            scenario = row['Graph Scenario']
+            
+            # Format numbers
+            edges = f"{row['Edges']:,}"
+            total_length = f"{row['Total Length (km)']:,}"
+            avg_length = f"{row['Avg Edge Length (km)']:.2f}"
+            stations = row['Stations_Used']
+            
+            # Format dataset name without the number part
+            dataset = format_dataset_name(dataset_raw)
+            
+            # Only show values if different from previous
+            country_display = country if country_raw != prev_country else ""
+            dataset_display = dataset if (dataset_raw != prev_dataset or country_raw != prev_country) else ""
+            stations_display = f"{stations:,}" if (stations != prev_stations or country_raw != prev_country or dataset_raw != prev_dataset) else ""
+            
+            # Create table row
+            latex_row = f"{country_display} & {dataset_display} & {scenario} & {edges} & {total_length} & {avg_length} & {stations_display} \\\\"
+            latex_content.append(latex_row)
+            
+            # Update previous values
+            prev_country = country_raw
+            prev_dataset = dataset_raw
+            prev_stations = stations
+        
+        latex_content.append("\\end{longtable}")
+        
+        # Join all content
+        latex_table = "\n".join(latex_content)
+        
+        # Save to file
+        latex_file = output_path / 'graph_statistics_table.tex'
+        with open(latex_file, 'w', encoding='utf-8') as f:
+            f.write("% LaTeX table of graph statistics\n")
+            f.write("% Requires packages: longtable, booktabs\n")
+            f.write("% Usage: \\input{graph_statistics_table.tex}\n\n")
+            f.write(latex_table)
+        
+        logger.info(f"✓ LaTeX table saved to: {latex_file}")
+        
+        # Also create a compact version with smaller font
+        self._create_compact_longtable(table_data, output_path)
+        
+        return latex_file
+
+    def _create_compact_longtable(self, table_data, output_path):
+        """Create a compact version of the longtable with smaller font and columns."""
+        compact_latex = []
+        compact_latex.append("\\footnotesize")
+        compact_latex.append("\\begin{longtable}{@{}p{1.5cm}p{1cm}p{1.2cm}r@{\\,}r@{\\,}r@{\\,}r@{}}")
+        compact_latex.append("\\caption{Graph Statistics (Compact Version)}")
+        compact_latex.append("\\label{tab:graph_statistics_compact} \\\\")
+        compact_latex.append("\\toprule")
+        compact_latex.append("Country & Dataset & Scenario & Edges & Length & Avg & Stations \\\\")
+        compact_latex.append(" & & & & (km) & (km) & \\\\")
+        compact_latex.append("\\midrule")
+        compact_latex.append("\\endfirsthead")
+        compact_latex.append("")
+        compact_latex.append("\\multicolumn{7}{c}{{\\tablename\\ \\thetable{} -- continued}} \\\\")
+        compact_latex.append("\\toprule")
+        compact_latex.append("Country & Dataset & Scenario & Edges & Length & Avg & Stations \\\\")
+        compact_latex.append(" & & & & (km) & (km) & \\\\")
+        compact_latex.append("\\midrule")
+        compact_latex.append("\\endhead")
+        compact_latex.append("")
+        compact_latex.append("\\midrule")
+        compact_latex.append("\\multicolumn{7}{r@{}}{{Continued}} \\\\")
+        compact_latex.append("\\endfoot")
+        compact_latex.append("")
+        compact_latex.append("\\bottomrule")
+        compact_latex.append("\\endlastfoot")
+        
+        # Helper functions for compact formatting
+        def format_dataset_compact(dataset_raw):
+            if '_' in dataset_raw:
+                parts = dataset_raw.split('_')
+                # Return just the first letter for maximum compactness
+                return parts[0][0].upper()  # L for LDCS, O for OECD
+            return dataset_raw[0].upper()
+        
+        def shorten_scenario(scenario):
+            name_map = {
+                'Original': 'Orig',
+                'Original Pruned': 'Pruned',
+                'KNN Filtered': 'KNN',
+                'Randomized Filtered': 'Random'
+            }
+            return name_map.get(scenario, scenario[:6])
+        
+        def shorten_country(country):
+            if len(country) > 12:
+                # Shorten very long country names
+                parts = country.split('--')
+                if len(parts) > 1:
+                    return parts[0][:8] + "."
+                return country[:10] + "."
+            return country
+        
+        # Track previous values
+        prev_country = None
+        prev_dataset = None
+        prev_stations = None
+        
+        # Process data with compact formatting
+        for _, row in table_data.iterrows():
+            country_raw = row['Country']
+            country = shorten_country(country_raw.replace('-', '--').title())
+            dataset_raw = row['Dataset']
+            scenario = shorten_scenario(row['Graph Scenario'])
+            
+            # Compact number formatting
+            edges = f"{row['Edges']/1000:.0f}k" if row['Edges'] >= 1000 else f"{row['Edges']}"
+            total_length = f"{row['Total Length (km)']/1000:.0f}k" if row['Total Length (km)'] >= 1000 else f"{row['Total Length (km)']:.0f}"
+            avg_length = f"{row['Avg Edge Length (km)']:.1f}"
+            stations = f"{row['Stations_Used']/1000:.1f}k" if row['Stations_Used'] >= 1000 else f"{row['Stations_Used']}"
+            
+            dataset = format_dataset_compact(dataset_raw)
+            
+            country_display = country if country_raw != prev_country else ""
+            dataset_display = dataset if (dataset_raw != prev_dataset or country_raw != prev_country) else ""
+            stations_display = stations if (row['Stations_Used'] != prev_stations or country_raw != prev_country or dataset_raw != prev_dataset) else ""
+            
+            latex_row = f"{country_display} & {dataset_display} & {scenario} & {edges} & {total_length} & {avg_length} & {stations_display} \\\\"
+            compact_latex.append(latex_row)
+            
+            prev_country = country_raw
+            prev_dataset = dataset_raw
+            prev_stations = row['Stations_Used']
+        
+        compact_latex.append("\\end{longtable}")
+        
+        # Save compact version
+        compact_latex_content = "\n".join(compact_latex)
+        compact_latex_file = output_path / 'graph_statistics_table_compact.tex'
+        with open(compact_latex_file, 'w', encoding='utf-8') as f:
+            f.write("% Compact LaTeX longtable of graph statistics\n")
+            f.write("% Requires packages: longtable, booktabs\n")
+            f.write("% Usage: \\input{graph_statistics_table_compact.tex}\n\n")
+            f.write(compact_latex_content)
+        
+        logger.info(f"✓ Compact LaTeX longtable saved to: {compact_latex_file}")
 
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
@@ -456,13 +674,18 @@ class GraphComparison:
         # Generate summary tables
         summary_stats, country_comparison = self.create_summary_tables()
         
+        # Create LaTeX table
+        latex_files = self.create_latex_table(self.combined_data, self.output_dir)
+        
         logger.info(f"Analysis complete. Results saved to {self.output_dir}")
         
         return {
             'summary_stats': summary_stats,
             'country_comparison': country_comparison,
-            'combined_data': self.combined_data
+            'combined_data': self.combined_data,
+            'latex_files': latex_files
         }
+
 
 
 def main():
