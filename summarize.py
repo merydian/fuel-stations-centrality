@@ -16,9 +16,21 @@ class GraphComparison:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True)
         
+        # Define consistent colors for scenarios and datasets
+        self.scenario_colors = {
+            'Original': '#006D77',
+            'Original Pruned': '#83C5BE',
+            'KNN Filtered': '#CD6C73',
+            'Randomized Filtered': '#769D9A'
+        }
+        
+        self.dataset_colors = {
+            'ldcs_150000': '#F4E8C1',
+            'oecd_150000': '#A0C1B9'
+        }
+        
         # Configure matplotlib for better plots
-        plt.style.use('seaborn-v0_8')
-        sns.set_palette("husl")
+        plt.style.use('fast')
         
     def load_data(self):
         """Load all graph_info_table CSV files from both directories."""
@@ -128,9 +140,6 @@ class GraphComparison:
         scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
         plot_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
         
-        # Set up the plot style
-        colors = ['skyblue', 'lightcoral', 'lightgreen', 'wheat']
-        
         # Create subplots - one for each scenario
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
         axes = axes.flatten()
@@ -142,7 +151,7 @@ class GraphComparison:
             scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
             
             # Create histogram for each dataset
-            for i, dataset in enumerate(datasets):
+            for dataset in datasets:
                 dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
                 pct_diffs = dataset_scenario_data['Pct_Diff'].values
                 
@@ -151,7 +160,7 @@ class GraphComparison:
                         alpha=0.7, 
                         label=f'{dataset} (n={len(pct_diffs)})', 
                         bins=20,
-                        color=colors[i % len(colors)],
+                        color=self.dataset_colors.get(dataset, '#CCCCCC'),
                         edgecolor='black',
                         linewidth=0.5)
             
@@ -234,13 +243,12 @@ class GraphComparison:
         plt.figure(figsize=(10, 6))
         
         datasets = original_data['Dataset'].unique()
-        colors = ['blue', 'red']
         
-        for i, dataset in enumerate(datasets):
+        for dataset in datasets:
             data_subset = original_data[original_data['Dataset'] == dataset]
             plt.scatter(data_subset['Stations_Used'], data_subset['Total Length (km)'], 
                     label=dataset, 
-                    color=colors[i % len(colors)],
+                    color=self.dataset_colors.get(dataset, '#CCCCCC'),
                     alpha=0.7,
                     s=50)
         
@@ -286,9 +294,6 @@ class GraphComparison:
         
         # Get unique datasets
         datasets = sorted(plot_data['Dataset'].unique())
-        
-        # Colors for scenarios
-        colors = ['lightblue', 'orange', 'lightgreen']
         
         # Create separate plot for each dataset
         output_files = []
@@ -346,7 +351,7 @@ class GraphComparison:
                 ax.bar(x + offset, values, 
                     bar_width, 
                     label=scenario,
-                    color=colors[s_idx],
+                    color=self.scenario_colors.get(scenario, '#CCCCCC'),
                     alpha=0.8,
                     edgecolor='black',
                     linewidth=0.5)
