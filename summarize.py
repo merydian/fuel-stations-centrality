@@ -657,6 +657,74 @@ class GraphComparison:
         
         logger.info(f"✓ Compact LaTeX longtable saved to: {compact_latex_file}")
 
+    def create_scenario_differences_table(self, output_dir):
+        """Create a LaTeX table for scenario differences summary."""
+        logger.info("Creating scenario differences summary table...")
+        
+        output_path = Path(output_dir)
+        summary_file = output_path / 'scenario_differences_summary.csv'
+        
+        if not summary_file.exists():
+            logger.warning(f"Scenario differences summary file not found: {summary_file}")
+            return None
+        
+        # Read the CSV file
+        import pandas as pd
+        summary_data = pd.read_csv(summary_file)
+        
+        # Filter out Original Pruned (all zeros)
+        summary_data = summary_data[summary_data['Scenario'] != 'Original Pruned']
+        
+        # Create LaTeX table
+        latex_content = []
+        latex_content.append("\\begin{table}[htbp]")
+        latex_content.append("\\centering")
+        latex_content.append("\\caption{Scenario Differences: Mean Percentage Changes in Total Length}")
+        latex_content.append("\\label{tab:scenario_differences}")
+        latex_content.append("\\begin{tabular}{@{}p{2.5cm}p{1.5cm}r@{}}")
+        latex_content.append("\\toprule")
+        latex_content.append("Scenario & Dataset & Mean Change (\\%) \\\\")
+        latex_content.append("\\midrule")
+        
+        # Helper function to format dataset names
+        def format_dataset_name(dataset_raw):
+            if '_' in dataset_raw:
+                parts = dataset_raw.split('_')
+                return parts[0].upper()
+            return dataset_raw.upper()
+        
+        # Process each row
+        for _, row in summary_data.iterrows():
+            scenario = row['Scenario']
+            dataset_raw = row['Dataset']
+            dataset = format_dataset_name(dataset_raw)
+            
+            # Format percentage
+            mean_pct = f"{row['Mean_Pct_Change']:.1f}"
+            
+            # Create table row
+            latex_row = f"{scenario} & {dataset} & {mean_pct} \\\\"
+            latex_content.append(latex_row)
+        
+        latex_content.append("\\bottomrule")
+        latex_content.append("\\end{tabular}")
+        latex_content.append("\\end{table}")
+        
+        # Join all content
+        latex_table = "\n".join(latex_content)
+        
+        # Save to file
+        latex_file = output_path / 'scenario_differences_table.tex'
+        with open(latex_file, 'w', encoding='utf-8') as f:
+            f.write("% LaTeX table of scenario differences summary\n")
+            f.write("% Requires packages: booktabs\n")
+            f.write("% Usage: \\input{scenario_differences_table.tex}\n\n")
+            f.write(latex_table)
+        
+        logger.info(f"✓ Scenario differences table saved to: {latex_file}")
+        
+        return latex_file
+
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
         logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
@@ -670,6 +738,8 @@ class GraphComparison:
         self.plot_scenario_differences(self.combined_data, self.output_dir)
         self.plot_stations_scatter(self.combined_data, self.output_dir)
         self.plot_length_differences_by_dataset(self.combined_data, self.output_dir)
+
+        self.create_scenario_differences_table(self.output_dir)
 
         # Generate summary tables
         summary_stats, country_comparison = self.create_summary_tables()
