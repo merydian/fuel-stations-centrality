@@ -36,7 +36,34 @@ class GraphComparison:
                     country = csv_file.parent.name
                     df['Country'] = country
                     df['Dataset'] = label
+                    
+                    # Get number of stations from all_stations_nodes.gpkg
+                    stations_file = csv_file.parent / "all_stations_nodes.gpkg"
+                    stations_count = 0
+                    
+                    if stations_file.exists():
+                        try:
+                            import geopandas as gpd
+                            stations_gdf = gpd.read_file(stations_file)
+                            stations_count = len(stations_gdf)
+                            logger.debug(f"Found {stations_count} stations in {stations_file}")
+                        except Exception as e:
+                            logger.warning(f"Error reading stations file {stations_file}: {e}")
+                            # Try alternative approach if geopandas fails
+                            try:
+                                import fiona
+                                with fiona.open(stations_file) as src:
+                                    stations_count = len(list(src))
+                                logger.debug(f"Found {stations_count} stations using fiona for {stations_file}")
+                            except Exception as e2:
+                                logger.warning(f"Could not read stations file with fiona either: {e2}")
+                    else:
+                        logger.warning(f"Stations file not found: {stations_file}")
+                    
+                    df['Stations_Used'] = stations_count
                     data.append(df)
+                    logger.debug(f"Loaded {csv_file} with {len(df)} rows, {stations_count} stations")
+                    
                 except Exception as e:
                     logger.warning(f"Error loading {csv_file}: {e}")
             
@@ -44,14 +71,33 @@ class GraphComparison:
         
         self.data1 = load_from_dir(self.dir1, self.dir1.name)
         self.data2 = load_from_dir(self.dir2, self.dir2.name)
-
-        assert not self.data1.empty, f"No data found in directory {self.dir1}"
-        assert not self.data2.empty, f"No data found in directory {self.dir2}"
+        
+        # Check if we have any data
+        if self.data1.empty and self.data2.empty:
+            raise ValueError(f"No data found in either directory:\n- {self.dir1}\n- {self.dir2}")
         
         # Combine datasets
-        self.combined_data = pd.concat([self.data1, self.data2], ignore_index=True)
+        data_to_combine = []
+        if not self.data1.empty:
+            data_to_combine.append(self.data1)
+        if not self.data2.empty:
+            data_to_combine.append(self.data2)
         
-        logger.info(f"Loaded data for {len(self.combined_data['Country'].unique())} countries")
+        self.combined_data = pd.concat(data_to_combine, ignore_index=True)
+        
+        # Verify we have the expected columns
+        expected_columns = ['Graph Scenario', 'Nodes', 'Edges', 'Total Length (km)', 'Country', 'Dataset', 'Stations_Used']
+        missing_columns = [col for col in expected_columns if col not in self.combined_data.columns]
+        if missing_columns:
+            logger.error(f"Missing expected columns: {missing_columns}")
+            logger.info(f"Available columns: {list(self.combined_data.columns)}")
+            raise ValueError(f"Missing required columns: {missing_columns}")
+        
+        logger.info(f"Successfully loaded data for {len(self.combined_data['Country'].unique())} countries")
+        logger.info(f"Available scenarios: {self.combined_data['Graph Scenario'].unique()}")
+        logger.info(f"Datasets: {self.combined_data['Dataset'].unique()}")
+        logger.info(f"Station counts range: {self.combined_data['Stations_Used'].min()} - {self.combined_data['Stations_Used'].max()}")
+        
         return self.combined_data
     
     def _safe_float_conversion(self, value):
@@ -317,6 +363,175 @@ class GraphComparison:
         
         return latex_table
 
+    def plot_scenario_differences(self, combined_data, output_dir):
+        """
+        Create histograms showing percentage differences from Original for each scenario,
+        comparing between datasets.
+        
+        Parameters
+        ----------
+        combined_data : pd.DataFrame
+            DataFrame with columns: 'Total Length (km)', 'Dataset', 'Graph Scenario', 'Country'
+        output_dir : str or Path
+            Directory to save the plots
+        """
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import numpy as np
+        from pathlib import Path
+        
+        logger.info("Creating scenario difference histograms")
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Calculate percentage differences for each country and scenario
+        def calculate_percentage_diff(group):
+            original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            group['Pct_Diff'] = ((group['Total Length (km)'] - original) / original) * 100
+            return group
+        
+        # Group by Country and Dataset, then calculate differences
+        data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
+        
+        # Filter out 'Original' scenario since it will always be 0%
+        scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
+        plot_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
+        
+        # Set up the plot style
+        plt.style.use('seaborn-v0_8')
+        colors = ['skyblue', 'lightcoral', 'lightgreen', 'wheat']
+        
+        # Create subplots - one for each scenario
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        axes = axes.flatten()
+        
+        datasets = plot_data['Dataset'].unique()
+        
+        for idx, scenario in enumerate(scenarios_to_plot):
+            ax = axes[idx]
+            scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
+            
+            # Create histogram for each dataset
+            for i, dataset in enumerate(datasets):
+                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
+                pct_diffs = dataset_scenario_data['Pct_Diff'].values
+                
+                if len(pct_diffs) > 0:  # Only plot if we have data
+                    ax.hist(pct_diffs, 
+                        alpha=0.7, 
+                        label=f'{dataset} (n={len(pct_diffs)})', 
+                        bins=20,
+                        color=colors[i % len(colors)],
+                        edgecolor='black',
+                        linewidth=0.5)
+            
+            ax.set_xlabel('Percentage Change from Original (%)')
+            ax.set_ylabel('Frequency (Number of Countries)')
+            ax.set_title(f'{scenario} vs Original')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            ax.axvline(x=0, color='red', linestyle='--', alpha=0.5, linewidth=1)
+            
+            # Add summary statistics
+            stats_text = ""
+            for dataset in datasets:
+                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
+                if len(dataset_scenario_data) > 0:
+                    pct_diffs = dataset_scenario_data['Pct_Diff']
+                    mean_val = pct_diffs.mean()
+                    std_val = pct_diffs.std()
+                    stats_text += f"{dataset}: μ={mean_val:.1f}%, σ={std_val:.1f}%\n"
+            
+            # Position text box in corner
+            ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=9,
+                    verticalalignment='top',
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="lightgray", alpha=0.8))
+        
+        # Remove the empty subplot
+        if len(scenarios_to_plot) < 4:
+            fig.delaxes(axes[3])
+        
+        plt.suptitle('Total Length Percentage Changes by Scenario and Dataset', fontsize=16)
+        plt.tight_layout()
+        
+        # Save the plot
+        output_file = output_path / 'scenario_differences_histograms.png'
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        logger.info(f"✓ Scenario difference histograms saved to: {output_file}")
+        
+        plt.show()
+        
+        # Create a summary table
+        summary_stats = []
+        for scenario in scenarios_to_plot:
+            scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
+            for dataset in datasets:
+                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
+                if len(dataset_scenario_data) > 0:
+                    pct_diffs = dataset_scenario_data['Pct_Diff']
+                    summary_stats.append({
+                        'Scenario': scenario,
+                        'Dataset': dataset,
+                        'Mean_Pct_Change': pct_diffs.mean(),
+                        'Std_Pct_Change': pct_diffs.std(),
+                        'Min_Pct_Change': pct_diffs.min(),
+                        'Max_Pct_Change': pct_diffs.max(),
+                        'Countries_Count': len(pct_diffs)
+                    })
+        
+        import pandas as pd
+        summary_df = pd.DataFrame(summary_stats)
+        
+        # Save summary table
+        summary_file = output_path / 'scenario_differences_summary.csv'
+        summary_df.to_csv(summary_file, index=False)
+        logger.info(f"✓ Summary statistics saved to: {summary_file}")
+        
+        # Create box plots for additional comparison
+        fig2, axes2 = plt.subplots(1, 3, figsize=(18, 6))
+        
+        for idx, scenario in enumerate(scenarios_to_plot):
+            ax = axes2[idx]
+            scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
+            
+            # Prepare data for box plot
+            box_data = []
+            box_labels = []
+            for dataset in datasets:
+                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
+                if len(dataset_scenario_data) > 0:
+                    box_data.append(dataset_scenario_data['Pct_Diff'].values)
+                    box_labels.append(dataset)
+            
+            if box_data:
+                bp = ax.boxplot(box_data, labels=box_labels, patch_artist=True)
+                
+                # Color the boxes
+                for patch, color in zip(bp['boxes'], colors[:len(box_data)]):
+                    patch.set_facecolor(color)
+                    patch.set_alpha(0.7)
+            
+            ax.set_ylabel('Percentage Change from Original (%)')
+            ax.set_title(f'{scenario} vs Original')
+            ax.grid(True, alpha=0.3)
+            ax.axhline(y=0, color='red', linestyle='--', alpha=0.5, linewidth=1)
+            
+            # Rotate x-axis labels if needed
+            plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
+        
+        plt.suptitle('Total Length Percentage Changes - Box Plot Comparison', fontsize=16)
+        plt.tight_layout()
+        
+        # Save box plot
+        boxplot_file = output_path / 'scenario_differences_boxplots.png'
+        plt.savefig(boxplot_file, dpi=300, bbox_inches='tight')
+        logger.info(f"✓ Scenario difference box plots saved to: {boxplot_file}")
+        
+        plt.show()
+    
+        return output_file, boxplot_file, summary_file
+
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
         logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
@@ -325,6 +540,8 @@ class GraphComparison:
         self.load_data()
         
         self.combined_data.to_csv(self.output_dir / 'combined_data.csv', index=False)
+
+        self.plot_scenario_differences(self.combined_data, self.output_dir)
 
         self.calculate_differences()
         
