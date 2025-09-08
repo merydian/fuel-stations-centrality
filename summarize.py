@@ -531,6 +531,58 @@ class GraphComparison:
         plt.show()
     
         return output_file, boxplot_file, summary_file
+    
+
+    def plot_stations_scatter(self, combined_data, output_dir):
+        """
+        Create a simple scatter plot of stations vs total length.
+        
+        Parameters
+        ----------
+        combined_data : pd.DataFrame
+            DataFrame with columns: 'Stations_Used', 'Total Length (km)', 'Dataset'
+        output_dir : str or Path
+            Directory to save the plot
+        """
+        import matplotlib.pyplot as plt
+        from pathlib import Path
+        
+        logger.info("Creating simple stations scatter plot")
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Filter to only Original scenario
+        original_data = combined_data[combined_data['Graph Scenario'] == 'Original'].copy()
+        
+        # Create simple scatter plot
+        plt.figure(figsize=(10, 6))
+        
+        datasets = original_data['Dataset'].unique()
+        colors = ['blue', 'red']
+        
+        for i, dataset in enumerate(datasets):
+            data_subset = original_data[original_data['Dataset'] == dataset]
+            plt.scatter(data_subset['Stations_Used'], data_subset['Total Length (km)'], 
+                    label=dataset, 
+                    color=colors[i % len(colors)],
+                    alpha=0.7,
+                    s=50)
+        
+        plt.xlabel('Number of Stations')
+        plt.ylabel('Total Length (km)')
+        plt.title('Stations vs Total Road Network Length')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
+        
+        # Save the plot
+        output_file = output_path / 'stations_scatter.png'
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        logger.info(f"✓ Stations scatter plot saved to: {output_file}")
+        
+        plt.show()
+        
+        return output_file
 
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
@@ -542,6 +594,7 @@ class GraphComparison:
         self.combined_data.to_csv(self.output_dir / 'combined_data.csv', index=False)
 
         self.plot_scenario_differences(self.combined_data, self.output_dir)
+        self.plot_stations_scatter(self.combined_data, self.output_dir)
 
         self.calculate_differences()
         
