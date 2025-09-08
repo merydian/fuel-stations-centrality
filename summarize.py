@@ -32,8 +32,12 @@ class GraphComparison:
             for csv_file in csv_files:
                 try:
                     df = pd.read_csv(csv_file)
-                    # Extract country name from file path
-                    country = csv_file.parent.name
+                    
+                    # Extract country name from filename instead of parent directory
+                    # Format: graph_info_table_iceland.csv -> iceland
+                    filename = csv_file.stem  # Remove .csv extension
+                    country = filename.replace('graph_info_table_', '')
+                    
                     df['Country'] = country
                     df['Dataset'] = label
                     
@@ -62,7 +66,7 @@ class GraphComparison:
                     
                     df['Stations_Used'] = stations_count
                     data.append(df)
-                    logger.debug(f"Loaded {csv_file} with {len(df)} rows, {stations_count} stations")
+                    logger.debug(f"Loaded {csv_file} with {len(df)} rows, {stations_count} stations for country: {country}")
                     
                 except Exception as e:
                     logger.warning(f"Error loading {csv_file}: {e}")
@@ -100,286 +104,11 @@ class GraphComparison:
         
         return self.combined_data
     
-    def _safe_float_conversion(self, value):
-        """Safely convert value to float, handling both strings and numeric types."""
-        if isinstance(value, str):
-            # Remove commas if it's a string
-            return float(value.replace(',', ''))
-        else:
-            # Already numeric
-            return float(value)
-    
-    def calculate_differences(self):
-        """Calculate percentage differences from Original to filtered versions."""
-        logger.info("Calculating percentage differences...")
-        
-        results = []
-        
-        for dataset in self.combined_data['Dataset'].unique():
-            dataset_data = self.combined_data[self.combined_data['Dataset'] == dataset]
-            
-            for country in dataset_data['Country'].unique():
-                country_data = dataset_data[dataset_data['Country'] == country]
-                
-                # Get original values
-                original = country_data[country_data['Graph Scenario'] == 'Original']
-                knn = country_data[country_data['Graph Scenario'] == 'KNN Filtered']
-                random = country_data[country_data['Graph Scenario'] == 'Randomized Filtered']
-                
-                if len(original) == 0:
-                    logger.warning(f"No original data found for {country} in {dataset}")
-                    continue
-                
-                original_edges = self._safe_float_conversion(original['Edges'].iloc[0])
-                original_length = self._safe_float_conversion(original['Total Length (km)'].iloc[0])
-                
-                for scenario, filtered_data in [('KNN', knn), ('Random', random)]:
-                    if len(filtered_data) == 0:
-                        continue
-                        
-                    filtered_edges = self._safe_float_conversion(filtered_data['Edges'].iloc[0])
-                    filtered_length = self._safe_float_conversion(filtered_data['Total Length (km)'].iloc[0])
-                    
-                    # Calculate percentage changes
-                    edge_change = ((filtered_edges - original_edges) / original_edges) * 100
-                    length_change = ((filtered_length - original_length) / original_length) * 100
-                    
-                    results.append({
-                        'Dataset': dataset,
-                        'Country': country,
-                        'Scenario': scenario,
-                        'Edge_Change_Pct': edge_change,
-                        'Length_Change_Pct': length_change,
-                        'Original_Edges': original_edges,
-                        'Filtered_Edges': filtered_edges,
-                        'Original_Length': original_length,
-                        'Filtered_Length': filtered_length
-                    })
-        
-        self.differences = pd.DataFrame(results)
-        return self.differences
-    
-    def create_comparison_plots(self):
-        """Create comparison plots between the two datasets."""
-        logger.info("Creating comparison plots...")
-        
-        # Set up the plotting style
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle(f'Graph Filtering Comparison: {self.dir1.name} vs {self.dir2.name}', fontsize=16)
-        
-        # Plot 1: Edge reduction comparison
-        ax1 = axes[0, 0]
-        knn_data = self.differences[self.differences['Scenario'] == 'KNN']
-        random_data = self.differences[self.differences['Scenario'] == 'Random']
-        
-        datasets = knn_data['Dataset'].unique()
-        x = np.arange(len(datasets))
-        width = 0.35
-        
-        knn_means = [knn_data[knn_data['Dataset'] == d]['Edge_Change_Pct'].mean() for d in datasets]
-        random_means = [random_data[random_data['Dataset'] == d]['Edge_Change_Pct'].mean() for d in datasets]
-        
-        ax1.bar(x - width/2, knn_means, width, label='KNN Filtered', alpha=0.8)
-        ax1.bar(x + width/2, random_means, width, label='Random Filtered', alpha=0.8)
-        ax1.set_xlabel('Dataset')
-        ax1.set_ylabel('Average Edge Reduction (%)')
-        ax1.set_title('Edge Reduction Comparison')
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(datasets, rotation=45)
-        ax1.legend()
-        ax1.grid(True, alpha=0.3)
-        
-        # Plot 2: Length reduction comparison
-        ax2 = axes[0, 1]
-        knn_length_means = [knn_data[knn_data['Dataset'] == d]['Length_Change_Pct'].mean() for d in datasets]
-        random_length_means = [random_data[random_data['Dataset'] == d]['Length_Change_Pct'].mean() for d in datasets]
-        
-        ax2.bar(x - width/2, knn_length_means, width, label='KNN Filtered', alpha=0.8)
-        ax2.bar(x + width/2, random_length_means, width, label='Random Filtered', alpha=0.8)
-        ax2.set_xlabel('Dataset')
-        ax2.set_ylabel('Average Length Reduction (%)')
-        ax2.set_title('Total Length Reduction Comparison')
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(datasets, rotation=45)
-        ax2.legend()
-        ax2.grid(True, alpha=0.3)
-        
-        # Plot 3: Scatter plot - Edge vs Length reduction for KNN
-        ax3 = axes[1, 0]
-        for dataset in datasets:
-            data = knn_data[knn_data['Dataset'] == dataset]
-            ax3.scatter(data['Edge_Change_Pct'], data['Length_Change_Pct'], 
-                       label=dataset, alpha=0.7, s=50)
-        
-        ax3.set_xlabel('Edge Reduction (%)')
-        ax3.set_ylabel('Length Reduction (%)')
-        ax3.set_title('KNN Filtering: Edge vs Length Reduction')
-        ax3.legend()
-        ax3.grid(True, alpha=0.3)
-        
-        # Plot 4: Box plot showing distribution of reductions
-        ax4 = axes[1, 1]
-        plot_data = []
-        labels = []
-        
-        for dataset in datasets:
-            for scenario in ['KNN', 'Random']:
-                data = self.differences[(self.differences['Dataset'] == dataset) & 
-                                      (self.differences['Scenario'] == scenario)]
-                plot_data.append(data['Edge_Change_Pct'].values)
-                labels.append(f'{dataset}\n{scenario}')
-        
-        ax4.boxplot(plot_data, labels=labels)
-        ax4.set_ylabel('Edge Reduction (%)')
-        ax4.set_title('Distribution of Edge Reductions')
-        ax4.tick_params(axis='x', rotation=45)
-        ax4.grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        
-        # Save the plot
-        plot_path = self.output_dir / 'comparison_plots.png'
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.savefig(self.output_dir / 'comparison_plots.pdf', bbox_inches='tight')
-        logger.info(f"Comparison plots saved to {plot_path}")
-        
-        plt.show()
-    
-    def create_summary_tables(self):
-        """Create summary tables with statistics."""
-        logger.info("Creating summary tables...")
-        
-        # Summary statistics by dataset and scenario
-        summary_stats = self.differences.groupby(['Dataset', 'Scenario']).agg({
-            'Edge_Change_Pct': ['mean', 'std', 'min', 'max', 'count'],
-            'Length_Change_Pct': ['mean', 'std', 'min', 'max']
-        }).round(2)
-        
-        # Flatten column names
-        summary_stats.columns = ['_'.join(col).strip() for col in summary_stats.columns.values]
-        summary_stats = summary_stats.reset_index()
-        
-        # Print summary table
-        print("\n" + "="*80)
-        print("SUMMARY STATISTICS: FILTERING EFFECTS")
-        print("="*80)
-        print(tabulate(summary_stats, headers='keys', tablefmt='grid', showindex=False))
-        
-        # Save to CSV
-        summary_stats.to_csv(self.output_dir / 'summary_statistics.csv', index=False)
-        
-        # Country-by-country comparison
-        country_comparison = self.differences.pivot_table(
-            index=['Country', 'Dataset'], 
-            columns='Scenario', 
-            values=['Edge_Change_Pct', 'Length_Change_Pct'],
-            aggfunc='first'
-        ).round(2)
-        
-        # Save detailed country comparison
-        country_comparison.to_csv(self.output_dir / 'country_comparison.csv')
-        
-        # Create difference between KNN and Random
-        knn_vs_random = []
-        for country in self.differences['Country'].unique():
-            for dataset in self.differences['Dataset'].unique():
-                country_data = self.differences[
-                    (self.differences['Country'] == country) & 
-                    (self.differences['Dataset'] == dataset)
-                ]
-                
-                knn_edge = country_data[country_data['Scenario'] == 'KNN']['Edge_Change_Pct']
-                random_edge = country_data[country_data['Scenario'] == 'Random']['Edge_Change_Pct']
-                
-                if len(knn_edge) > 0 and len(random_edge) > 0:
-                    knn_vs_random.append({
-                        'Country': country,
-                        'Dataset': dataset,
-                        'Edge_Diff_KNN_vs_Random': knn_edge.iloc[0] - random_edge.iloc[0],
-                        'KNN_More_Effective': knn_edge.iloc[0] < random_edge.iloc[0]  # More negative = more reduction
-                    })
-        
-        effectiveness_df = pd.DataFrame(knn_vs_random)
-        
-        # Summary of effectiveness
-        if len(effectiveness_df) > 0:
-            effectiveness_summary = effectiveness_df.groupby('Dataset').agg({
-                'Edge_Diff_KNN_vs_Random': ['mean', 'std'],
-                'KNN_More_Effective': ['sum', 'count']
-            }).round(3)
-            
-            print("\n" + "="*60)
-            print("KNN vs RANDOM EFFECTIVENESS COMPARISON")
-            print("="*60)
-            print("Negative Edge_Diff means KNN removes more edges than Random")
-            print(tabulate(effectiveness_summary, headers='keys', tablefmt='grid'))
-            
-            effectiveness_df.to_csv(self.output_dir / 'knn_vs_random_effectiveness.csv', index=False)
-        
-        logger.info(f"Summary tables saved to {self.output_dir}")
-        
-        return summary_stats, country_comparison, effectiveness_df
-    
-    def generate_latex_tables(self):
-        """Generate LaTeX tables for publication."""
-        logger.info("Generating LaTeX tables...")
-        
-        # Summary statistics table
-        summary_stats = self.differences.groupby(['Dataset', 'Scenario']).agg({
-            'Edge_Change_Pct': ['mean', 'std'],
-            'Length_Change_Pct': ['mean', 'std']
-        }).round(2)
-        
-        # Create a cleaner version for LaTeX
-        latex_data = []
-        for dataset in summary_stats.index.get_level_values(0).unique():
-            for scenario in ['KNN', 'Random']:
-                if (dataset, scenario) in summary_stats.index:
-                    row = summary_stats.loc[(dataset, scenario)]
-                    latex_data.append({
-                        'Dataset': dataset,
-                        'Scenario': scenario,
-                        'Edge Reduction (%)': f"{row[('Edge_Change_Pct', 'mean')]:.1f} ± {row[('Edge_Change_Pct', 'std')]:.1f}",
-                        'Length Reduction (%)': f"{row[('Length_Change_Pct', 'mean')]:.1f} ± {row[('Length_Change_Pct', 'std')]:.1f}"
-                    })
-        
-        latex_df = pd.DataFrame(latex_data)
-        
-        # Generate LaTeX table
-        latex_table = latex_df.to_latex(
-            index=False,
-            column_format='llcc',
-            caption='Comparison of Graph Filtering Effects: Mean ± Standard Deviation',
-            label='tab:filtering_comparison',
-            escape=False
-        )
-        
-        # Save LaTeX table
-        latex_path = self.output_dir / 'comparison_table.tex'
-        with open(latex_path, 'w') as f:
-            f.write(latex_table)
-        
-        logger.info(f"LaTeX table saved to {latex_path}")
-        
-        return latex_table
-
     def plot_scenario_differences(self, combined_data, output_dir):
         """
         Create histograms showing percentage differences from Original for each scenario,
         comparing between datasets.
-        
-        Parameters
-        ----------
-        combined_data : pd.DataFrame
-            DataFrame with columns: 'Total Length (km)', 'Dataset', 'Graph Scenario', 'Country'
-        output_dir : str or Path
-            Directory to save the plots
         """
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        import numpy as np
-        from pathlib import Path
-        
         logger.info("Creating scenario difference histograms")
         
         output_path = Path(output_dir)
@@ -387,6 +116,7 @@ class GraphComparison:
         
         # Calculate percentage differences for each country and scenario
         def calculate_percentage_diff(group):
+            # Use 'Original' as baseline
             original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
             group['Pct_Diff'] = ((group['Total Length (km)'] - original) / original) * 100
             return group
@@ -394,12 +124,11 @@ class GraphComparison:
         # Group by Country and Dataset, then calculate differences
         data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
         
-        # Filter out 'Original' scenario since it will always be 0%
+        # Updated scenario names to match the new CSV format
         scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
         plot_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
         
         # Set up the plot style
-        plt.style.use('seaborn-v0_8')
         colors = ['skyblue', 'lightcoral', 'lightgreen', 'wheat']
         
         # Create subplots - one for each scenario
@@ -480,7 +209,6 @@ class GraphComparison:
                         'Countries_Count': len(pct_diffs)
                     })
         
-        import pandas as pd
         summary_df = pd.DataFrame(summary_stats)
         
         # Save summary table
@@ -488,65 +216,12 @@ class GraphComparison:
         summary_df.to_csv(summary_file, index=False)
         logger.info(f"✓ Summary statistics saved to: {summary_file}")
         
-        # Create box plots for additional comparison
-        fig2, axes2 = plt.subplots(1, 3, figsize=(18, 6))
-        
-        for idx, scenario in enumerate(scenarios_to_plot):
-            ax = axes2[idx]
-            scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
-            
-            # Prepare data for box plot
-            box_data = []
-            box_labels = []
-            for dataset in datasets:
-                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
-                if len(dataset_scenario_data) > 0:
-                    box_data.append(dataset_scenario_data['Pct_Diff'].values)
-                    box_labels.append(dataset)
-            
-            if box_data:
-                bp = ax.boxplot(box_data, labels=box_labels, patch_artist=True)
-                
-                # Color the boxes
-                for patch, color in zip(bp['boxes'], colors[:len(box_data)]):
-                    patch.set_facecolor(color)
-                    patch.set_alpha(0.7)
-            
-            ax.set_ylabel('Percentage Change from Original (%)')
-            ax.set_title(f'{scenario} vs Original')
-            ax.grid(True, alpha=0.3)
-            ax.axhline(y=0, color='red', linestyle='--', alpha=0.5, linewidth=1)
-            
-            # Rotate x-axis labels if needed
-            plt.setp(ax.get_xticklabels(), rotation=45, ha='right')
-        
-        plt.suptitle('Total Length Percentage Changes - Box Plot Comparison', fontsize=16)
-        plt.tight_layout()
-        
-        # Save box plot
-        boxplot_file = output_path / 'scenario_differences_boxplots.png'
-        plt.savefig(boxplot_file, dpi=300, bbox_inches='tight')
-        logger.info(f"✓ Scenario difference box plots saved to: {boxplot_file}")
-        
-        plt.show()
-    
-        return output_file, boxplot_file, summary_file
-    
+        return output_file, summary_file
 
     def plot_stations_scatter(self, combined_data, output_dir):
         """
         Create a simple scatter plot of stations vs total length.
-        
-        Parameters
-        ----------
-        combined_data : pd.DataFrame
-            DataFrame with columns: 'Stations_Used', 'Total Length (km)', 'Dataset'
-        output_dir : str or Path
-            Directory to save the plot
         """
-        import matplotlib.pyplot as plt
-        from pathlib import Path
-        
         logger.info("Creating simple stations scatter plot")
         
         output_path = Path(output_dir)
@@ -584,6 +259,181 @@ class GraphComparison:
         
         return output_file
 
+    def plot_length_differences_by_dataset(self, combined_data, output_dir):
+        """
+        Create separate bar plots for each dataset showing total length differences by country.
+        """
+        logger.info("Creating length differences bar plots per dataset")
+        
+        combined_data = combined_data[combined_data["Country"] != "iceland"]
+
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Calculate percentage differences for each country and scenario
+        def calculate_percentage_diff(group):
+            # Use 'Original' as baseline
+            original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            group['Length_Diff_Pct'] = ((group['Total Length (km)'] - original) / original) * 100
+            return group
+        
+        # Group by Country and Dataset, then calculate differences
+        data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
+        
+        # Filter out 'Original' scenario since it will always be 0%
+        scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
+        plot_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
+        
+        # Get unique datasets
+        datasets = sorted(plot_data['Dataset'].unique())
+        
+        # Colors for scenarios
+        colors = ['lightblue', 'orange', 'lightgreen']
+        
+        # Create separate plot for each dataset
+        output_files = []
+        for dataset in datasets:
+            dataset_data = plot_data[plot_data['Dataset'] == dataset]
+            all_countries = sorted(dataset_data['Country'].unique())
+            
+            # Filter countries with difference > 0.5% in any scenario
+            countries_to_show = []
+            for country in all_countries:
+                country_data = dataset_data[dataset_data['Country'] == country]
+                max_diff = country_data['Length_Diff_Pct'].abs().max()
+                if max_diff > 0.5:
+                    countries_to_show.append(country)
+            
+            if not countries_to_show:
+                logger.info(f"No countries with >0.5% difference found in {dataset}")
+                continue
+            
+            logger.info(f"Showing {len(countries_to_show)} countries with >0.5% difference in {dataset}")
+            
+            # Set up the plot
+            fig, ax = plt.subplots(figsize=(max(15, len(countries_to_show) * 0.8), 8))
+            
+            # Set bar width and positions
+            bar_width = 0.25
+            x = np.arange(len(countries_to_show))
+            
+            # Track countries with zero differences for note
+            zero_diff_countries = []
+            
+            # Plot bars for each scenario
+            for s_idx, scenario in enumerate(scenarios_to_plot):
+                scenario_data = dataset_data[dataset_data['Graph Scenario'] == scenario]
+                
+                # Get values for filtered countries only
+                values = []
+                for country in countries_to_show:
+                    country_data = scenario_data[scenario_data['Country'] == country]
+                    if len(country_data) > 0:
+                        diff_pct = country_data['Length_Diff_Pct'].iloc[0]
+                        # Use absolute value of the percentage difference
+                        values.append(abs(diff_pct))
+                        
+                        # Check if difference is exactly 0 for this scenario
+                        if diff_pct == 0 and country not in zero_diff_countries:
+                            zero_diff_countries.append(country)
+                    else:
+                        values.append(0)
+                
+                # Calculate bar position
+                offset = (s_idx - 1) * bar_width
+                
+                # Plot bars
+                ax.bar(x + offset, values, 
+                    bar_width, 
+                    label=scenario,
+                    color=colors[s_idx],
+                    alpha=0.8,
+                    edgecolor='black',
+                    linewidth=0.5)
+            
+            # Customize the plot
+            ax.set_yscale('log')
+            ax.set_xlabel('Country')
+            ax.set_ylabel('Absolute Length Difference from Original (%)')
+            ax.set_title(f'Total Length Changes by Country - {dataset.upper()}\n(Countries with >0.5% difference)')
+            ax.set_xticks(x)
+            ax.set_xticklabels(countries_to_show, rotation=45, ha='right')
+            ax.set_ylim(top=100)
+            ax.grid(True, alpha=0.3, axis='y')
+            ax.legend()
+            
+            plt.tight_layout()
+            
+            # Save the plot
+            safe_dataset_name = dataset.replace('_', '-')
+            output_file = output_path / f'length_differences_{safe_dataset_name}.png'
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            logger.info(f"✓ Length differences bar plot for {dataset} saved to: {output_file}")
+            
+            # Log countries with zero differences
+            if zero_diff_countries:
+                logger.info(f"Countries with 0% difference in {dataset}: {zero_diff_countries}")
+            
+            output_files.append(output_file)
+            
+            plt.show()
+        
+        return output_files
+
+    def create_summary_tables(self):
+        """Create summary tables with statistics."""
+        logger.info("Creating summary tables...")
+        
+        # Calculate percentage differences for each country and scenario
+        def calculate_percentage_diff(group):
+            original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            original_edges = group[group['Graph Scenario'] == 'Original']['Edges'].iloc[0]
+            
+            group['Length_Diff_Pct'] = ((group['Total Length (km)'] - original) / original) * 100
+            group['Edge_Diff_Pct'] = ((group['Edges'] - original_edges) / original_edges) * 100
+            return group
+        
+        # Group by Country and Dataset, then calculate differences
+        data_with_diff = self.combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
+        
+        # Filter out 'Original' scenario
+        scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
+        differences_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
+        
+        # Summary statistics by dataset and scenario
+        summary_stats = differences_data.groupby(['Dataset', 'Graph Scenario']).agg({
+            'Edge_Diff_Pct': ['mean', 'std', 'min', 'max', 'count'],
+            'Length_Diff_Pct': ['mean', 'std', 'min', 'max']
+        }).round(2)
+        
+        # Flatten column names
+        summary_stats.columns = ['_'.join(col).strip() for col in summary_stats.columns.values]
+        summary_stats = summary_stats.reset_index()
+        
+        # Print summary table
+        print("\n" + "="*80)
+        print("SUMMARY STATISTICS: FILTERING EFFECTS")
+        print("="*80)
+        print(tabulate(summary_stats, headers='keys', tablefmt='grid', showindex=False))
+        
+        # Save to CSV
+        summary_stats.to_csv(self.output_dir / 'summary_statistics.csv', index=False)
+        
+        # Country-by-country comparison
+        country_comparison = differences_data.pivot_table(
+            index=['Country', 'Dataset'], 
+            columns='Graph Scenario', 
+            values=['Edge_Diff_Pct', 'Length_Diff_Pct'],
+            aggfunc='first'
+        ).round(2)
+        
+        # Save detailed country comparison
+        country_comparison.to_csv(self.output_dir / 'country_comparison.csv')
+        
+        logger.info(f"Summary tables saved to {self.output_dir}")
+        
+        return summary_stats, country_comparison
+
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
         logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
@@ -593,23 +443,20 @@ class GraphComparison:
         
         self.combined_data.to_csv(self.output_dir / 'combined_data.csv', index=False)
 
+        # Create all plots
         self.plot_scenario_differences(self.combined_data, self.output_dir)
         self.plot_stations_scatter(self.combined_data, self.output_dir)
+        self.plot_length_differences_by_dataset(self.combined_data, self.output_dir)
 
-        self.calculate_differences()
-        
-        # Generate outputs
-        self.create_comparison_plots()
-        summary_stats, country_comparison, effectiveness = self.create_summary_tables()
-        latex_table = self.generate_latex_tables()
+        # Generate summary tables
+        summary_stats, country_comparison = self.create_summary_tables()
         
         logger.info(f"Analysis complete. Results saved to {self.output_dir}")
         
         return {
             'summary_stats': summary_stats,
             'country_comparison': country_comparison,
-            'effectiveness': effectiveness,
-            'latex_table': latex_table
+            'combined_data': self.combined_data
         }
 
 
