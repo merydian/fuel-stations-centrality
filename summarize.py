@@ -1,446 +1,374 @@
-import os
 import pandas as pd
-import argparse
+import matplotlib.pyplot as plt
+import seaborn as sns
 from pathlib import Path
-from config import Config
+import numpy as np
+import argparse
+import logging
+from tabulate import tabulate
 
-def find_csv_files(input_dir, filename_prefix="graph_info_table_"):
-    """Find all CSV files that start with the specified prefix in input_dir and subdirectories."""
-    csv_files = []
-    for root, dirs, files in os.walk(input_dir):
-        for file in files:
-            if file.startswith(filename_prefix) and file.endswith('.csv'):
-                csv_files.append(os.path.join(root, file))
-    return csv_files
+logger = logging.getLogger(__name__)
 
-def load_and_combine_data(csv_files, dataset_name="Dataset"):
-    """Load all CSV files and combine them with source file information."""
-    all_data = []
-    
-    for csv_file in csv_files:
-        try:
-            df = pd.read_csv(csv_file)
-            
-            # Remove Density column if it exists
-            if 'Density' in df.columns:
-                df = df.drop('Density', axis=1)
-            
-            # Add only the metadata we want
-            df['Dataset'] = dataset_name
-            
-            # Extract country from the parent directory name
-            country = Path(csv_file).parent.name
-            df['Country'] = country
-            
-            all_data.append(df)
-            
-        except Exception as e:
-            print(f"Error reading {csv_file}: {e}")
-    
-    if all_data:
-        combined_df = pd.concat(all_data, ignore_index=True)
+class GraphComparison:
+    def __init__(self, dir1, dir2, output_dir="comparison_output"):
+        self.dir1 = Path(dir1)
+        self.dir2 = Path(dir2)
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(exist_ok=True)
         
-        # Reorder columns to put metadata at the end
-        data_columns = [col for col in combined_df.columns if col not in ['Dataset', 'Country']]
-        final_columns = data_columns + ['Dataset', 'Country']
-        combined_df = combined_df[final_columns]
+        # Configure matplotlib for better plots
+        plt.style.use('seaborn-v0_8')
+        sns.set_palette("husl")
         
-        return combined_df
-    else:
-        return pd.DataFrame()
-
-def compare_datasets(df1, df2, dataset1_name="Dataset 1", dataset2_name="Dataset 2"):
-    """Compare two datasets and generate comparison statistics."""
-    
-    print(f"\n" + "="*80)
-    print(f"COMPARISON: {dataset1_name} vs {dataset2_name}")
-    print("="*80)
-    
-    # Basic comparison
-    print(f"\nBasic Statistics:")
-    print(f"  {dataset1_name}: {len(df1)} scenarios from {df1['Country'].nunique()} countries")
-    print(f"  {dataset2_name}: {len(df2)} scenarios from {df2['Country'].nunique()} countries")
-    
-    # Find common countries
-    countries1 = set(df1['Country'].unique())
-    countries2 = set(df2['Country'].unique())
-    common_countries = countries1.intersection(countries2)
-    
-    print(f"\nCountry overlap:")
-    print(f"  Common countries ({len(common_countries)}): {', '.join(sorted(common_countries))}")
-    print(f"  Only in {dataset1_name} ({len(countries1 - countries2)}): {', '.join(sorted(countries1 - countries2))}")
-    print(f"  Only in {dataset2_name} ({len(countries2 - countries1)}): {', '.join(sorted(countries2 - countries1))}")
-    
-    # Numeric columns for comparison (removed Density)
-    numeric_columns = ['Nodes', 'Edges', 'Total Length (km)', 'Avg Edge Length (m)', 'Components']
-    
-    # Create comparison dataframes for common countries and scenarios
-    comparison_results = []
-    
-    for country in sorted(common_countries):
-        for scenario in sorted(set(df1['Graph Scenario'].unique()).intersection(set(df2['Graph Scenario'].unique()))):
-            data1 = df1[(df1['Country'] == country) & (df1['Graph Scenario'] == scenario)]
-            data2 = df2[(df2['Country'] == country) & (df2['Graph Scenario'] == scenario)]
+    def load_data(self):
+        """Load all graph_info_table CSV files from both directories."""
+        logger.info("Loading data from both directories...")
+        
+        def load_from_dir(directory, label):
+            data = []
+            csv_files = list(directory.rglob("graph_info_table_*.csv"))
+            logger.debug(f"Found {len(csv_files)} CSV files in {directory}")
             
-            if len(data1) > 0 and len(data2) > 0:
-                row = {
-                    'Country': country,
-                    'Scenario': scenario,
-                    'Dataset_1_Name': dataset1_name,
-                    'Dataset_2_Name': dataset2_name
-                }
+            for csv_file in csv_files:
+                try:
+                    df = pd.read_csv(csv_file)
+                    # Extract country name from file path
+                    country = csv_file.parent.name
+                    df['Country'] = country
+                    df['Dataset'] = label
+                    data.append(df)
+                except Exception as e:
+                    logger.warning(f"Error loading {csv_file}: {e}")
+            
+            return pd.concat(data, ignore_index=True) if data else pd.DataFrame()
+        
+        self.data1 = load_from_dir(self.dir1, self.dir1.name)
+        self.data2 = load_from_dir(self.dir2, self.dir2.name)
+
+        assert not self.data1.empty, f"No data found in directory {self.dir1}"
+        assert not self.data2.empty, f"No data found in directory {self.dir2}"
+        
+        # Combine datasets
+        self.combined_data = pd.concat([self.data1, self.data2], ignore_index=True)
+        
+        logger.info(f"Loaded data for {len(self.combined_data['Country'].unique())} countries")
+        return self.combined_data
+    
+    def _safe_float_conversion(self, value):
+        """Safely convert value to float, handling both strings and numeric types."""
+        if isinstance(value, str):
+            # Remove commas if it's a string
+            return float(value.replace(',', ''))
+        else:
+            # Already numeric
+            return float(value)
+    
+    def calculate_differences(self):
+        """Calculate percentage differences from Original to filtered versions."""
+        logger.info("Calculating percentage differences...")
+        
+        results = []
+        
+        for dataset in self.combined_data['Dataset'].unique():
+            dataset_data = self.combined_data[self.combined_data['Dataset'] == dataset]
+            
+            for country in dataset_data['Country'].unique():
+                country_data = dataset_data[dataset_data['Country'] == country]
                 
-                for col in numeric_columns:
-                    if col in data1.columns and col in data2.columns:
-                        val1 = pd.to_numeric(data1[col].iloc[0], errors='coerce')
-                        val2 = pd.to_numeric(data2[col].iloc[0], errors='coerce')
+                # Get original values
+                original = country_data[country_data['Graph Scenario'] == 'Original']
+                knn = country_data[country_data['Graph Scenario'] == 'KNN Filtered']
+                random = country_data[country_data['Graph Scenario'] == 'Randomized Filtered']
+                
+                if len(original) == 0:
+                    logger.warning(f"No original data found for {country} in {dataset}")
+                    continue
+                
+                original_edges = self._safe_float_conversion(original['Edges'].iloc[0])
+                original_length = self._safe_float_conversion(original['Total Length (km)'].iloc[0])
+                
+                for scenario, filtered_data in [('KNN', knn), ('Random', random)]:
+                    if len(filtered_data) == 0:
+                        continue
                         
-                        if pd.notna(val1) and pd.notna(val2):
-                            row[f'{col}_{dataset1_name}'] = val1
-                            row[f'{col}_{dataset2_name}'] = val2
-                            
-                            # Calculate relative change
-                            if val1 != 0:
-                                change_pct = ((val2 - val1) / val1) * 100
-                                row[f'{col}_Change_Pct'] = change_pct
-                            else:
-                                row[f'{col}_Change_Pct'] = float('inf') if val2 > 0 else 0
-                
-                comparison_results.append(row)
-    
-    comparison_df = pd.DataFrame(comparison_results)
-    
-    # Summary statistics
-    print(f"\nSUMMARY STATISTICS BY SCENARIO:")
-    print("-" * 60)
-    
-    summary_stats = []
-    for scenario in sorted(comparison_df['Scenario'].unique()):
-        scenario_data = comparison_df[comparison_df['Scenario'] == scenario]
-        row = {'Scenario': scenario, 'Countries': len(scenario_data)}
-        
-        for col in numeric_columns:
-            change_col = f'{col}_Change_Pct'
-            if change_col in scenario_data.columns:
-                changes = scenario_data[change_col].dropna()
-                if len(changes) > 0:
-                    row[f'{col}_Mean_Change'] = changes.mean()
-                    row[f'{col}_Std_Change'] = changes.std()
-        
-        summary_stats.append(row)
-    
-    summary_df = pd.DataFrame(summary_stats)
-    
-    return comparison_df, summary_df
-
-def save_to_latex(df, filename, caption="", label=""):
-    """Save DataFrame to LaTeX table format using pandas built-in escaping."""
-    
-    # Convert to Path object if it isn't already
-    filename = Path(filename)
-    
-    # Generate the table content with proper escaping
-    latex_content = df.to_latex(
-        index=False,
-        float_format='{:.2f}'.format,
-        caption=caption,
-        label=label,
-        longtable=True,
-        escape=True,  # Let pandas handle all escaping automatically
-        column_format='l' * len(df.columns)  # Left-align all columns
-    )
-    
-    # Create complete LaTeX document with landscape orientation
-    full_latex = f"""\\documentclass{{article}}
-\\usepackage{{longtable}}
-\\usepackage{{booktabs}}
-\\usepackage{{array}}
-\\usepackage{{geometry}}
-\\usepackage{{pdflscape}}
-\\usepackage{{afterpage}}
-\\usepackage{{amsmath}}
-\\usepackage{{amssymb}}
-\\geometry{{margin=0.5in}}
-
-\\begin{{document}}
-
-\\afterpage{{\\clearpage}}
-\\begin{{landscape}}
-
-{latex_content}
-
-\\end{{landscape}}
-
-\\end{{document}}
-"""
-    
-    # Create table-only filename
-    table_only_filename = filename.with_name(filename.stem + '_table_only' + filename.suffix)
-    
-    # Save complete document
-    with open(filename, 'w') as f:
-        f.write(full_latex)
-    
-    # Save table-only version
-    table_header = """% Required packages:
-% \\usepackage{longtable}
-% \\usepackage{booktabs}
-% \\usepackage{array}
-% \\usepackage{pdflscape}
-% \\usepackage{afterpage}
-% \\usepackage{amsmath}
-% \\usepackage{amssymb}
-
-\\afterpage{\\clearpage}
-\\begin{landscape}
-
-"""
-    
-    table_footer = """
-\\end{landscape}
-"""
-    
-    with open(table_only_filename, 'w') as f:
-        f.write(table_header + latex_content + table_footer)
-    
-    print(f"Complete LaTeX document saved to: {filename}")
-    print(f"Table-only version saved to: {table_only_filename}")
-
-def generate_metric_specific_tables(df1, df2, dataset1_name, dataset2_name, output_dir):
-    """Generate separate tables for each key metric."""
-    
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Define metrics to create tables for
-    metrics = ['Nodes', 'Edges', 'Total Length (km)', 'Avg Edge Length (m)']
-    
-    # Get common countries and scenarios
-    countries1 = set(df1['Country'].unique())
-    countries2 = set(df2['Country'].unique())
-    common_countries = countries1.intersection(countries2)
-    
-    scenarios1 = set(df1['Graph Scenario'].unique())
-    scenarios2 = set(df2['Graph Scenario'].unique())
-    common_scenarios = scenarios1.intersection(scenarios2)
-    
-    for metric in metrics:
-        print(f"\nGenerating table for: {metric}")
-        
-        # Create comparison data for this metric
-        metric_data = []
-        
-        for country in sorted(common_countries):
-            for scenario in sorted(common_scenarios):
-                data1 = df1[(df1['Country'] == country) & (df1['Graph Scenario'] == scenario)]
-                data2 = df2[(df2['Country'] == country) & (df2['Graph Scenario'] == scenario)]
-                
-                if len(data1) > 0 and len(data2) > 0 and metric in data1.columns and metric in data2.columns:
-                    val1 = pd.to_numeric(data1[metric].iloc[0], errors='coerce')
-                    val2 = pd.to_numeric(data2[metric].iloc[0], errors='coerce')
+                    filtered_edges = self._safe_float_conversion(filtered_data['Edges'].iloc[0])
+                    filtered_length = self._safe_float_conversion(filtered_data['Total Length (km)'].iloc[0])
                     
-                    if pd.notna(val1) and pd.notna(val2):
-                        # Calculate change
-                        if val1 != 0:
-                            change_pct = ((val2 - val1) / val1) * 100
-                            change_abs = val2 - val1
-                        else:
-                            change_pct = float('inf') if val2 > 0 else 0
-                            change_abs = val2
-                        
-                        row = {
-                            'Country': country,
-                            'Scenario': scenario,
-                            f'{dataset1_name}': val1,
-                            f'{dataset2_name}': val2,
-                            'Absolute Change': change_abs,
-                            'Percent Change': change_pct
-                        }
-                        metric_data.append(row)
+                    # Calculate percentage changes
+                    edge_change = ((filtered_edges - original_edges) / original_edges) * 100
+                    length_change = ((filtered_length - original_length) / original_length) * 100
+                    
+                    results.append({
+                        'Dataset': dataset,
+                        'Country': country,
+                        'Scenario': scenario,
+                        'Edge_Change_Pct': edge_change,
+                        'Length_Change_Pct': length_change,
+                        'Original_Edges': original_edges,
+                        'Filtered_Edges': filtered_edges,
+                        'Original_Length': original_length,
+                        'Filtered_Length': filtered_length
+                    })
         
-        if metric_data:
-            metric_df = pd.DataFrame(metric_data)
+        self.differences = pd.DataFrame(results)
+        return self.differences
+    
+    def create_comparison_plots(self):
+        """Create comparison plots between the two datasets."""
+        logger.info("Creating comparison plots...")
+        
+        # Set up the plotting style
+        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        fig.suptitle(f'Graph Filtering Comparison: {self.dir1.name} vs {self.dir2.name}', fontsize=16)
+        
+        # Plot 1: Edge reduction comparison
+        ax1 = axes[0, 0]
+        knn_data = self.differences[self.differences['Scenario'] == 'KNN']
+        random_data = self.differences[self.differences['Scenario'] == 'Random']
+        
+        datasets = knn_data['Dataset'].unique()
+        x = np.arange(len(datasets))
+        width = 0.35
+        
+        knn_means = [knn_data[knn_data['Dataset'] == d]['Edge_Change_Pct'].mean() for d in datasets]
+        random_means = [random_data[random_data['Dataset'] == d]['Edge_Change_Pct'].mean() for d in datasets]
+        
+        ax1.bar(x - width/2, knn_means, width, label='KNN Filtered', alpha=0.8)
+        ax1.bar(x + width/2, random_means, width, label='Random Filtered', alpha=0.8)
+        ax1.set_xlabel('Dataset')
+        ax1.set_ylabel('Average Edge Reduction (%)')
+        ax1.set_title('Edge Reduction Comparison')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(datasets, rotation=45)
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Plot 2: Length reduction comparison
+        ax2 = axes[0, 1]
+        knn_length_means = [knn_data[knn_data['Dataset'] == d]['Length_Change_Pct'].mean() for d in datasets]
+        random_length_means = [random_data[random_data['Dataset'] == d]['Length_Change_Pct'].mean() for d in datasets]
+        
+        ax2.bar(x - width/2, knn_length_means, width, label='KNN Filtered', alpha=0.8)
+        ax2.bar(x + width/2, random_length_means, width, label='Random Filtered', alpha=0.8)
+        ax2.set_xlabel('Dataset')
+        ax2.set_ylabel('Average Length Reduction (%)')
+        ax2.set_title('Total Length Reduction Comparison')
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(datasets, rotation=45)
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        # Plot 3: Scatter plot - Edge vs Length reduction for KNN
+        ax3 = axes[1, 0]
+        for dataset in datasets:
+            data = knn_data[knn_data['Dataset'] == dataset]
+            ax3.scatter(data['Edge_Change_Pct'], data['Length_Change_Pct'], 
+                       label=dataset, alpha=0.7, s=50)
+        
+        ax3.set_xlabel('Edge Reduction (%)')
+        ax3.set_ylabel('Length Reduction (%)')
+        ax3.set_title('KNN Filtering: Edge vs Length Reduction')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # Plot 4: Box plot showing distribution of reductions
+        ax4 = axes[1, 1]
+        plot_data = []
+        labels = []
+        
+        for dataset in datasets:
+            for scenario in ['KNN', 'Random']:
+                data = self.differences[(self.differences['Dataset'] == dataset) & 
+                                      (self.differences['Scenario'] == scenario)]
+                plot_data.append(data['Edge_Change_Pct'].values)
+                labels.append(f'{dataset}\n{scenario}')
+        
+        ax4.boxplot(plot_data, labels=labels)
+        ax4.set_ylabel('Edge Reduction (%)')
+        ax4.set_title('Distribution of Edge Reductions')
+        ax4.tick_params(axis='x', rotation=45)
+        ax4.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        # Save the plot
+        plot_path = self.output_dir / 'comparison_plots.png'
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.savefig(self.output_dir / 'comparison_plots.pdf', bbox_inches='tight')
+        logger.info(f"Comparison plots saved to {plot_path}")
+        
+        plt.show()
+    
+    def create_summary_tables(self):
+        """Create summary tables with statistics."""
+        logger.info("Creating summary tables...")
+        
+        # Summary statistics by dataset and scenario
+        summary_stats = self.differences.groupby(['Dataset', 'Scenario']).agg({
+            'Edge_Change_Pct': ['mean', 'std', 'min', 'max', 'count'],
+            'Length_Change_Pct': ['mean', 'std', 'min', 'max']
+        }).round(2)
+        
+        # Flatten column names
+        summary_stats.columns = ['_'.join(col).strip() for col in summary_stats.columns.values]
+        summary_stats = summary_stats.reset_index()
+        
+        # Print summary table
+        print("\n" + "="*80)
+        print("SUMMARY STATISTICS: FILTERING EFFECTS")
+        print("="*80)
+        print(tabulate(summary_stats, headers='keys', tablefmt='grid', showindex=False))
+        
+        # Save to CSV
+        summary_stats.to_csv(self.output_dir / 'summary_statistics.csv', index=False)
+        
+        # Country-by-country comparison
+        country_comparison = self.differences.pivot_table(
+            index=['Country', 'Dataset'], 
+            columns='Scenario', 
+            values=['Edge_Change_Pct', 'Length_Change_Pct'],
+            aggfunc='first'
+        ).round(2)
+        
+        # Save detailed country comparison
+        country_comparison.to_csv(self.output_dir / 'country_comparison.csv')
+        
+        # Create difference between KNN and Random
+        knn_vs_random = []
+        for country in self.differences['Country'].unique():
+            for dataset in self.differences['Dataset'].unique():
+                country_data = self.differences[
+                    (self.differences['Country'] == country) & 
+                    (self.differences['Dataset'] == dataset)
+                ]
+                
+                knn_edge = country_data[country_data['Scenario'] == 'KNN']['Edge_Change_Pct']
+                random_edge = country_data[country_data['Scenario'] == 'Random']['Edge_Change_Pct']
+                
+                if len(knn_edge) > 0 and len(random_edge) > 0:
+                    knn_vs_random.append({
+                        'Country': country,
+                        'Dataset': dataset,
+                        'Edge_Diff_KNN_vs_Random': knn_edge.iloc[0] - random_edge.iloc[0],
+                        'KNN_More_Effective': knn_edge.iloc[0] < random_edge.iloc[0]  # More negative = more reduction
+                    })
+        
+        effectiveness_df = pd.DataFrame(knn_vs_random)
+        
+        # Summary of effectiveness
+        if len(effectiveness_df) > 0:
+            effectiveness_summary = effectiveness_df.groupby('Dataset').agg({
+                'Edge_Diff_KNN_vs_Random': ['mean', 'std'],
+                'KNN_More_Effective': ['sum', 'count']
+            }).round(3)
             
-            # Clean metric name for filename
-            metric_clean = metric.lower().replace(' ', '_').replace('(', '').replace(')', '').replace('/', '_')
+            print("\n" + "="*60)
+            print("KNN vs RANDOM EFFECTIVENESS COMPARISON")
+            print("="*60)
+            print("Negative Edge_Diff means KNN removes more edges than Random")
+            print(tabulate(effectiveness_summary, headers='keys', tablefmt='grid'))
             
-            # Save CSV
-            csv_filename = output_dir / f"{metric_clean}_comparison.csv"
-            metric_df.to_csv(csv_filename, index=False)
-            
-            # Save LaTeX
-            latex_filename = output_dir / f"{metric_clean}_comparison.tex"
-            save_to_latex(
-                metric_df,
-                latex_filename,
-                caption=f"{metric} Comparison: {dataset1_name} vs {dataset2_name}",
-                label=f"tab:{metric_clean}_comparison"
-            )
-            
-            print(f"  Saved: {csv_filename}")
-            print(f"  Saved: {latex_filename}")
-            
-            # Generate summary statistics for this metric
-            summary_stats = {
-                'Metric': metric,
-                'Total Comparisons': len(metric_df),
-                'Mean Absolute Change': metric_df['Absolute Change'].mean(),
-                'Mean Percent Change': metric_df['Percent Change'].mean(),
-                'Std Percent Change': metric_df['Percent Change'].std(),
-                'Min Percent Change': metric_df['Percent Change'].min(),
-                'Max Percent Change': metric_df['Percent Change'].max(),
-            }
-            
-            # Save metric summary
-            summary_df = pd.DataFrame([summary_stats])
-            summary_csv = output_dir / f"{metric_clean}_summary.csv"
-            summary_df.to_csv(summary_csv, index=False)
-            
-            summary_latex = output_dir / f"{metric_clean}_summary.tex"
-            save_to_latex(
-                summary_df,
-                summary_latex,
-                caption=f"{metric} Summary Statistics: {dataset1_name} vs {dataset2_name}",
-                label=f"tab:{metric_clean}_summary"
-            )
+            effectiveness_df.to_csv(self.output_dir / 'knn_vs_random_effectiveness.csv', index=False)
+        
+        logger.info(f"Summary tables saved to {self.output_dir}")
+        
+        return summary_stats, country_comparison, effectiveness_df
+    
+    def generate_latex_tables(self):
+        """Generate LaTeX tables for publication."""
+        logger.info("Generating LaTeX tables...")
+        
+        # Summary statistics table
+        summary_stats = self.differences.groupby(['Dataset', 'Scenario']).agg({
+            'Edge_Change_Pct': ['mean', 'std'],
+            'Length_Change_Pct': ['mean', 'std']
+        }).round(2)
+        
+        # Create a cleaner version for LaTeX
+        latex_data = []
+        for dataset in summary_stats.index.get_level_values(0).unique():
+            for scenario in ['KNN', 'Random']:
+                if (dataset, scenario) in summary_stats.index:
+                    row = summary_stats.loc[(dataset, scenario)]
+                    latex_data.append({
+                        'Dataset': dataset,
+                        'Scenario': scenario,
+                        'Edge Reduction (%)': f"{row[('Edge_Change_Pct', 'mean')]:.1f} ± {row[('Edge_Change_Pct', 'std')]:.1f}",
+                        'Length Reduction (%)': f"{row[('Length_Change_Pct', 'mean')]:.1f} ± {row[('Length_Change_Pct', 'std')]:.1f}"
+                    })
+        
+        latex_df = pd.DataFrame(latex_data)
+        
+        # Generate LaTeX table
+        latex_table = latex_df.to_latex(
+            index=False,
+            column_format='llcc',
+            caption='Comparison of Graph Filtering Effects: Mean ± Standard Deviation',
+            label='tab:filtering_comparison',
+            escape=False
+        )
+        
+        # Save LaTeX table
+        latex_path = self.output_dir / 'comparison_table.tex'
+        with open(latex_path, 'w') as f:
+            f.write(latex_table)
+        
+        logger.info(f"LaTeX table saved to {latex_path}")
+        
+        return latex_table
 
-def generate_comparison_report(df1, df2, dataset1_name, dataset2_name, output_dir):
-    """Generate comprehensive comparison report with CSV and LaTeX outputs."""
-    
-    # Ensure output directory exists
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Compare datasets
-    comparison_df, summary_df = compare_datasets(df1, df2, dataset1_name, dataset2_name)
-    
-    # Generate metric-specific tables
-    generate_metric_specific_tables(df1, df2, dataset1_name, dataset2_name, output_dir)
-    
-    # Save combined datasets
-    combined_df = pd.concat([df1, df2], ignore_index=True)
-    combined_csv = output_dir / "combined_datasets.csv"
-    combined_df.to_csv(combined_csv, index=False)
-    print(f"Combined datasets saved to: {combined_csv}")
-    
-    # Save comparison results
-    if not comparison_df.empty:
-        # CSV files
-        comparison_csv = output_dir / "dataset_comparison.csv"
-        comparison_df.to_csv(comparison_csv, index=False)
-        print(f"Detailed comparison saved to: {comparison_csv}")
+    def run_full_analysis(self):
+        """Run the complete comparison analysis."""
+        logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
         
-        summary_csv = output_dir / "comparison_summary.csv"
-        summary_df.to_csv(summary_csv, index=False)
-        print(f"Summary statistics saved to: {summary_csv}")
+        # Load and process data
+        self.load_data()
         
-        # LaTeX tables
-        comparison_latex = output_dir / "dataset_comparison.tex"
-        save_to_latex(
-            comparison_df,
-            comparison_latex,
-            caption=f"Detailed Comparison: {dataset1_name} vs {dataset2_name}",
-            label="tab:detailed_comparison"
-        )
+        self.combined_data.to_csv(self.output_dir / 'combined_data.csv', index=False)
+
+        self.calculate_differences()
         
-        summary_latex = output_dir / "comparison_summary.tex"
-        save_to_latex(
-            summary_df,
-            summary_latex,
-            caption=f"Summary Statistics: {dataset1_name} vs {dataset2_name}",
-            label="tab:summary_comparison"
-        )
+        # Generate outputs
+        self.create_comparison_plots()
+        summary_stats, country_comparison, effectiveness = self.create_summary_tables()
+        latex_table = self.generate_latex_tables()
         
-        # Generate a simplified comparison table for key metrics
-        numeric_columns = ['Nodes', 'Edges', 'Total Length (km)']
-        simplified_df = comparison_df[['Country', 'Scenario'] + 
-                                    [f'{col}_Change_Pct' for col in numeric_columns if f'{col}_Change_Pct' in comparison_df.columns]]
+        logger.info(f"Analysis complete. Results saved to {self.output_dir}")
         
-        if not simplified_df.empty:
-            simplified_latex = output_dir / "simplified_comparison.tex"
-            save_to_latex(
-                simplified_df,
-                simplified_latex,
-                caption=f"Key Metrics Comparison (\\% Change): {dataset1_name} vs {dataset2_name}",
-                label="tab:simplified_comparison"
-            )
-    
-    # Save individual dataset summaries
-    for df, name in [(df1, dataset1_name), (df2, dataset2_name)]:
-        if not df.empty:
-            # CSV
-            dataset_csv = output_dir / f"{name.lower().replace(' ', '_')}_summary.csv"
-            df.to_csv(dataset_csv, index=False)
-            
-            # LaTeX
-            dataset_latex = output_dir / f"{name.lower().replace(' ', '_')}_summary.tex"
-            save_to_latex(
-                df,
-                dataset_latex,
-                caption=f"Dataset Summary: {name}",
-                label=f"tab:{name.lower().replace(' ', '_')}_summary"
-            )
-    
-    print(f"\nAll outputs saved to: {output_dir}")
-    return comparison_df, summary_df
+        return {
+            'summary_stats': summary_stats,
+            'country_comparison': country_comparison,
+            'effectiveness': effectiveness,
+            'latex_table': latex_table
+        }
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare graph_info_table_*.csv files from two directories")
-    parser.add_argument("dir1", help="First input directory")
-    parser.add_argument("dir2", help="Second input directory")
-    parser.add_argument("--name1", help="Name for first dataset", default="Dataset 1")
-    parser.add_argument("--name2", help="Name for second dataset", default="Dataset 2")
-    parser.add_argument("--prefix", "-p", help="CSV filename prefix to search for", default="graph_info_table_")
-    parser.add_argument("--output-dir", "-o", help="Output directory (default: config.OUTPUT_DIR)", default=None)
+    """Main function for command line usage."""
+    parser = argparse.ArgumentParser(description='Compare graph filtering results between two datasets')
+    parser.add_argument('--dir1', type=str, help='First directory containing analysis results', default="/home/till/Music/ldcs_150000/")
+    parser.add_argument('--dir2', type=str, help='Second directory containing analysis results', default="/home/till/Music/oecd_150000/")
+    parser.add_argument('--output', type=str, default='output/comparison_output', 
+                       help='Output directory for comparison results')
+    parser.add_argument('--verbose', '-v', action='store_true', 
+                       help='Enable verbose logging')
     
     args = parser.parse_args()
     
-    # Set output directory
-    if args.output_dir:
-        output_dir = Path(args.output_dir)
-    else:
-        # Output to /output directory
-        output_dir = Path("output") / "comparison_results"
+    # Configure logging
+    level = logging.DEBUG if args.verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
     
-    # Validate input directories
-    for dir_path, name in [(args.dir1, args.name1), (args.dir2, args.name2)]:
-        if not os.path.exists(dir_path):
-            print(f"Error: Input directory '{dir_path}' does not exist.")
-            return
+    # Run comparison
+    comparison = GraphComparison(args.dir1, args.dir2, args.output)
+    results = comparison.run_full_analysis()
     
-    print(f"Comparing directories:")
-    print(f"  {args.name1}: {args.dir1}")
-    print(f"  {args.name2}: {args.dir2}")
-    print(f"Output directory: {output_dir}")
-    
-    # Find CSV files in both directories
-    csv_files1 = find_csv_files(args.dir1, args.prefix)
-    csv_files2 = find_csv_files(args.dir2, args.prefix)
-    
-    print(f"\nFound files:")
-    print(f"  {args.name1}: {len(csv_files1)} files")
-    print(f"  {args.name2}: {len(csv_files2)} files")
-    
-    if not csv_files1 and not csv_files2:
-        print(f"No CSV files starting with '{args.prefix}' found in either directory.")
-        return
-    
-    # Load and combine data from both directories
-    print(f"\nLoading data from {args.name1}...")
-    df1 = load_and_combine_data(csv_files1, args.name1)
-    
-    print(f"\nLoading data from {args.name2}...")
-    df2 = load_and_combine_data(csv_files2, args.name2)
-    
-    if df1.empty and df2.empty:
-        print("No data loaded from either directory.")
-        return
-    
-    # Generate comparison report
-    print(f"\nGenerating comparison report...")
-    comparison_df, summary_df = generate_comparison_report(df1, df2, args.name1, args.name2, output_dir)
-    
-    print(f"\nComparison complete!")
+    print(f"\nComparison analysis complete!")
+    print(f"Results saved to: {comparison.output_dir}")
+
 
 if __name__ == "__main__":
     main()
