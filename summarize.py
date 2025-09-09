@@ -195,7 +195,7 @@ class GraphComparison:
         
         # Save the plot
         output_file = output_path / 'scenario_differences_histograms.png'
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        # plt.savefig(output_file, dpi=300, bbox_inches='tight')
         logger.info(f"✓ Scenario difference histograms saved to: {output_file}")
         
         # plt.show()
@@ -724,10 +724,208 @@ class GraphComparison:
         logger.info(f"✓ Scenario differences table saved to: {latex_file}")
         
         return latex_file
+        
+    def check_missing_countries(self):
+        """
+        Check which OECD and LDC countries are missing from the analysis directories
+        and output a txt file with countries that have empty analysis output.
+        """
+        logger.info("Checking for missing countries in analysis directories...")
+        
+        # Define OECD and LDC country lists based on the actual shell scripts
+        oecd_countries = {
+            # Europe (from analyse_oecd.sh)
+            'austria', 'belgium', 'czech-republic', 'denmark', 'estonia', 'finland', 
+            'france', 'germany', 'greece', 'hungary', 'iceland', 'ireland-and-northern-ireland', 
+            'italy', 'latvia', 'lithuania', 'luxembourg', 'netherlands', 'norway', 
+            'poland', 'portugal', 'slovakia', 'slovenia', 'spain', 'sweden', 
+            'switzerland', 'great-britain',
+            # North America
+            'canada', 'mexico', 'us',
+            # Asia-Pacific
+            'australia', 'japan', 'south-korea', 'new-zealand',
+            # South America
+            'chile', 'colombia',
+            # Middle East
+            'israel-and-palestine', 'turkey'
+        }
+        
+        ldc_countries = {
+            # Africa (from analyse_ldcs.sh)
+            'angola', 'benin', 'burkina-faso', 'burundi', 'central-african-republic', 
+            'chad', 'comores', 'congo-democratic-republic', 'djibouti', 'eritrea', 
+            'ethiopia', 'senegal-and-gambia', 'guinea', 'guinea-bissau', 'lesotho', 
+            'liberia', 'madagascar', 'malawi', 'mali', 'mauritania', 'mozambique', 
+            'niger', 'rwanda', 'sierra-leone', 'somalia', 'south-sudan', 'sudan', 
+            'togo', 'uganda', 'tanzania', 'zambia',
+            # Asia
+            'afghanistan', 'bangladesh', 'cambodia', 'laos', 'myanmar', 'nepal', 
+            'yemen', 'east-timor',
+            # Caribbean
+            'haiti-and-domrep',
+            # Pacific
+            'kiribati', 'solomon-islands', 'tuvalu'
+        }
+        
+        def check_directory_countries(directory, expected_countries, dataset_name):
+            """Check which countries are present/missing in a directory."""
+            directory = Path(directory)
+            
+            # Find all CSV files matching the pattern
+            csv_files = list(directory.rglob("graph_info_table_*.csv"))
+            
+            # Extract country names from CSV files
+            found_countries = set()
+            countries_with_data = set()
+            countries_with_empty_data = set()
+            
+            for csv_file in csv_files:
+                # Extract country name from filename
+                filename = csv_file.stem
+                country = filename.replace('graph_info_table_', '')
+                found_countries.add(country)
+                
+                # Check if the CSV file has actual data
+                try:
+                    df = pd.read_csv(csv_file)
+                    if len(df) > 0 and not df.empty:
+                        countries_with_data.add(country)
+                    else:
+                        countries_with_empty_data.add(country)
+                        logger.warning(f"Empty CSV file found: {csv_file}")
+                except Exception as e:
+                    countries_with_empty_data.add(country)
+                    logger.warning(f"Error reading CSV file {csv_file}: {e}")
+            
+            # Find missing countries
+            missing_countries = expected_countries - found_countries
+            
+            return {
+                'found_countries': found_countries,
+                'countries_with_data': countries_with_data,
+                'countries_with_empty_data': countries_with_empty_data,
+                'missing_countries': missing_countries,
+                'dataset_name': dataset_name
+            }
+        
+        # Check both directories
+        results = {}
+        
+        # Check dir1 (assume LDCS if contains 'ldc' in name, otherwise OECD)
+        dir1_name = self.dir1.name.lower()
+        if 'ldc' in dir1_name:
+            results['dir1'] = check_directory_countries(self.dir1, ldc_countries, f"LDC ({self.dir1.name})")
+        else:
+            results['dir1'] = check_directory_countries(self.dir1, oecd_countries, f"OECD ({self.dir1.name})")
+        
+        # Check dir2 (assume LDCS if contains 'ldc' in name, otherwise OECD)
+        dir2_name = self.dir2.name.lower()
+        if 'ldc' in dir2_name:
+            results['dir2'] = check_directory_countries(self.dir2, ldc_countries, f"LDC ({self.dir2.name})")
+        else:
+            results['dir2'] = check_directory_countries(self.dir2, oecd_countries, f"OECD ({self.dir2.name})")
+        
+        # Create output report
+        output_file = self.output_dir / 'missing_countries_report.txt'
+        
+        with open(output_file, 'w') as f:
+            f.write("MISSING COUNTRIES ANALYSIS REPORT\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Analysis Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Directory 1: {self.dir1}\n")
+            f.write(f"Directory 2: {self.dir2}\n\n")
+            
+            # Add expected country lists to report
+            f.write("EXPECTED COUNTRIES BY DATASET:\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"OECD Countries ({len(oecd_countries)}): {', '.join(sorted(oecd_countries))}\n\n")
+            f.write(f"LDC Countries ({len(ldc_countries)}): {', '.join(sorted(ldc_countries))}\n\n")
+            
+            for dir_key, result in results.items():
+                dataset_name = result['dataset_name']
+                f.write(f"DATASET: {dataset_name}\n")
+                f.write("-" * 30 + "\n")
+                
+                f.write(f"Countries found with data: {len(result['countries_with_data'])}\n")
+                f.write(f"Countries with empty/corrupted data: {len(result['countries_with_empty_data'])}\n")
+                f.write(f"Countries completely missing: {len(result['missing_countries'])}\n\n")
+                
+                if result['countries_with_empty_data']:
+                    f.write("COUNTRIES WITH EMPTY/CORRUPTED ANALYSIS OUTPUT:\n")
+                    for country in sorted(result['countries_with_empty_data']):
+                        f.write(f"  - {country}\n")
+                    f.write("\n")
+                
+                if result['missing_countries']:
+                    f.write("COUNTRIES COMPLETELY MISSING FROM ANALYSIS:\n")
+                    for country in sorted(result['missing_countries']):
+                        f.write(f"  - {country}\n")
+                    f.write("\n")
+                
+                if result['countries_with_data']:
+                    f.write("COUNTRIES WITH SUCCESSFUL ANALYSIS:\n")
+                    for country in sorted(result['countries_with_data']):
+                        f.write(f"  - {country}\n")
+                    f.write("\n")
+                
+                f.write("\n")
+            
+            # Summary section
+            f.write("SUMMARY\n")
+            f.write("=" * 20 + "\n")
+            
+            total_empty = 0
+            total_missing = 0
+            total_expected = 0
+            
+            for result in results.values():
+                total_empty += len(result['countries_with_empty_data'])
+                total_missing += len(result['missing_countries'])
+                total_expected += len(result['countries_with_data']) + len(result['countries_with_empty_data']) + len(result['missing_countries'])
+            
+            f.write(f"Total countries with empty analysis output: {total_empty}\n")
+            f.write(f"Total countries completely missing: {total_missing}\n")
+            f.write(f"Total countries that need attention: {total_empty + total_missing}\n")
+            
+            # All countries that need attention
+            all_problematic = set()
+            for result in results.values():
+                all_problematic.update(result['countries_with_empty_data'])
+                all_problematic.update(result['missing_countries'])
+            
+            if all_problematic:
+                f.write("\nALL COUNTRIES NEEDING ATTENTION:\n")
+                for country in sorted(all_problematic):
+                    f.write(f"  - {country}\n")
+        
+        logger.info(f"✓ Missing countries report saved to: {output_file}")
+        
+        # Print summary to console
+        print("\n" + "="*60)
+        print("MISSING COUNTRIES ANALYSIS SUMMARY")
+        print("="*60)
+        
+        for result in results.values():
+            dataset_name = result['dataset_name']
+            print(f"\n{dataset_name}:")
+            print(f"  ✓ Countries with data: {len(result['countries_with_data'])}")
+            print(f"  ⚠ Empty/corrupted data: {len(result['countries_with_empty_data'])}")
+            print(f"  ✗ Completely missing: {len(result['missing_countries'])}")
+            
+            if result['countries_with_empty_data']:
+                print(f"  Empty data countries: {', '.join(sorted(result['countries_with_empty_data']))}")
+            if result['missing_countries']:
+                print(f"  Missing countries: {', '.join(sorted(result['missing_countries']))}")
+        
+        return results, output_file
+    
 
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
         logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
+        
+        # Check for missing countries first
+        missing_results, missing_report_file = self.check_missing_countries()
         
         # Load and process data
         self.load_data()
@@ -748,12 +946,15 @@ class GraphComparison:
         latex_files = self.create_latex_table(self.combined_data, self.output_dir)
         
         logger.info(f"Analysis complete. Results saved to {self.output_dir}")
+        logger.info(f"Missing countries report: {missing_report_file}")
         
         return {
             'summary_stats': summary_stats,
             'country_comparison': country_comparison,
             'combined_data': self.combined_data,
-            'latex_files': latex_files
+            'latex_files': latex_files,
+            'missing_countries': missing_results,
+            'missing_report': missing_report_file
         }
 
 
