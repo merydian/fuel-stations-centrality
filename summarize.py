@@ -6,6 +6,7 @@ import numpy as np
 import argparse
 import logging
 from tabulate import tabulate
+import matplotlib.font_manager as fm
 
 logger = logging.getLogger(__name__)
 
@@ -18,19 +19,46 @@ class GraphComparison:
         
         # Define consistent colors for scenarios and datasets
         self.scenario_colors = {
-            'Original': '#006D77',
-            'Original Pruned': '#83C5BE',
-            'KNN Filtered': '#CD6C73',
-            'Randomized Filtered': '#769D9A'
+            'Original': '#ffffff',
+            'Original Pruned': '#ffffff',
+            'KNN Filtered': '#F8471B',
+            'Randomized Filtered': '#1B8B7C'
         }
         
         self.dataset_colors = {
-            'ldcs_150000': '#F4E8C1',
-            'oecd_150000': '#A0C1B9'
+            'ldcs_150000': '#99C24D',
+            'oecd_150000': '#692537'
         }
         
         # Configure matplotlib for better plots
         plt.style.use('fast')
+        self._configure_matplotlib()
+
+    def _configure_matplotlib(self):
+        """Configure matplotlib settings including Open Sans font."""
+        plt.style.use('fast')
+        
+        # Set Open Sans as the default font
+        plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['font.sans-serif'] = ['Open Sans', 'DejaVu Sans', 'Arial', 'sans-serif']
+        
+        # Additional font settings for better appearance
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['axes.titlesize'] = 12
+        plt.rcParams['axes.labelsize'] = 10
+        plt.rcParams['xtick.labelsize'] = 9
+        plt.rcParams['ytick.labelsize'] = 9
+        plt.rcParams['legend.fontsize'] = 12
+        plt.rcParams['figure.titlesize'] = 14
+        
+        # Check if Open Sans is available
+        available_fonts = [f.name for f in fm.fontManager.ttflist]
+        if 'Open Sans' in available_fonts:
+            print("✓ Open Sans font is available")
+        else:
+            print("⚠ Open Sans font not found, using fallback fonts")
+            print("Available sans-serif fonts:", [f for f in available_fonts if 'sans' in f.lower()][:5])
+    
         
     def load_data(self):
         """Load all graph_info_table CSV files from both directories."""
@@ -243,17 +271,46 @@ class GraphComparison:
         plt.figure(figsize=(10, 6))
         
         datasets = original_data['Dataset'].unique()
-        
+
         for dataset in datasets:
             data_subset = original_data[original_data['Dataset'] == dataset]
+            
+            # Customize the label here instead of using raw dataset name
+            custom_label = dataset.replace('_150000', '').upper()  # Remove number, make uppercase
+            # Or use a mapping:
+            label_mapping = {
+                'ldcs_150000': 'Least Developed Countries',
+                'oecd_150000': 'OECD Countries'
+            }
+            custom_label = label_mapping.get(dataset, dataset)
+            
             plt.scatter(data_subset['Stations_Used'], data_subset['Total Length (km)'], 
-                    label=dataset, 
-                    color=self.dataset_colors.get(dataset, '#CCCCCC'),
-                    alpha=0.7,
-                    s=50)
+                label=custom_label,  # Use custom label instead of dataset
+                color=self.dataset_colors.get(dataset, '#CCCCCC'),
+                alpha=0.4,
+                s=20)
+    
+        plt.xscale('log')
+        plt.yscale('log')
+        
+        # Set readable tick labels
+        from matplotlib.ticker import FuncFormatter
+        
+        def thousands_formatter(x, pos):
+            if x >= 1000000:
+                return f'{x/1000000:.0f}M'
+            elif x >= 1000:
+                return f'{x/1000:.0f}K'
+            else:
+                return f'{x:.0f}'
+        plt.xlim(0, None)  # Start x-axis at 0, auto-scale max
+        plt.ylim(0, None)  # Start y-axis at 0, auto-scale max
+
+        plt.gca().xaxis.set_major_formatter(FuncFormatter(thousands_formatter))
+        plt.gca().yaxis.set_major_formatter(FuncFormatter(thousands_formatter))
         
         plt.xlabel('Number of Stations')
-        plt.ylabel('Total Length (km)')
+        plt.ylabel('Total Road Network Length (km)')
         plt.title('Stations vs Total Road Network Length')
         plt.legend()
         plt.grid(True, alpha=0.3)
@@ -299,6 +356,8 @@ class GraphComparison:
         output_files = []
         for dataset in datasets:
             dataset_data = plot_data[plot_data['Dataset'] == dataset]
+            dataset_data["Country"] = dataset_data["Country"].str.replace('-', '--').str.title()
+
             all_countries = sorted(dataset_data['Country'].unique())
             
             # Filter countries with difference > 0.5% in any scenario
@@ -313,7 +372,20 @@ class GraphComparison:
                 logger.info(f"No countries with >0.5% difference found in {dataset}")
                 continue
             
-            logger.info(f"Showing {len(countries_to_show)} countries with >0.5% difference in {dataset}")
+            # Sort countries by their KNN filtering difference (ascending)
+            knn_data = dataset_data[dataset_data['Graph Scenario'] == 'KNN Filtered']
+            country_knn_diffs = {}
+            for country in countries_to_show:
+                country_knn_data = knn_data[knn_data['Country'] == country]
+                if len(country_knn_data) > 0:
+                    country_knn_diffs[country] = abs(country_knn_data['Length_Diff_Pct'].iloc[0])
+                else:
+                    country_knn_diffs[country] = 0
+            
+            # Sort countries by KNN difference in ascending order
+            countries_to_show = sorted(countries_to_show, key=lambda x: country_knn_diffs[x])
+            
+            logger.info(f"Showing {len(countries_to_show)} countries with >0.5% difference in {dataset}, sorted by KNN difference")
             
             # Set up the plot
             fig, ax = plt.subplots(figsize=(max(15, len(countries_to_show) * 0.8), 8))
@@ -356,14 +428,27 @@ class GraphComparison:
                     edgecolor='black',
                     linewidth=0.5)
             
-            # Customize the plot
-            ax.set_yscale('log')
-            ax.set_xlabel('Country')
+            # Customize the plot - make y-axis more readable
+            from matplotlib.ticker import FuncFormatter
+            
+            def percentage_formatter(x, pos):
+                if x >= 1:
+                    return f'{x:.0f}%'
+                else:
+                    return f'{x:.1f}%'
+            
+            # Use linear scale instead of log for better readability
+            ax.set_xlabel('Country (sorted by KNN filtering difference, ascending)')
             ax.set_ylabel('Absolute Length Difference from Original (%)')
-            ax.set_title(f'Total Length Changes by Country - {dataset.upper()}\n(Countries with >0.5% difference)')
+            ax.set_title(f'Total Length Changes by Country - {dataset.upper()}\n(Countries with >0.5% difference, sorted by KNN effect)')
             ax.set_xticks(x)
             ax.set_xticklabels(countries_to_show, rotation=45, ha='right')
-            ax.set_ylim(top=100)
+            
+            # Set reasonable y-axis limits and formatting
+            max_val = max([max(values) for values in [ax.containers[i].datavalues for i in range(len(scenarios_to_plot))]] + [1])
+            ax.set_ylim(0, max_val * 1.1)
+            ax.yaxis.set_major_formatter(FuncFormatter(percentage_formatter))
+            
             ax.grid(True, alpha=0.3, axis='y')
             ax.legend()
             
@@ -407,13 +492,24 @@ class GraphComparison:
         
         # Summary statistics by dataset and scenario
         summary_stats = differences_data.groupby(['Dataset', 'Graph Scenario']).agg({
-            'Edge_Diff_Pct': ['mean', 'std', 'min', 'max', 'count'],
-            'Length_Diff_Pct': ['mean', 'std', 'min', 'max']
+            'Edge_Diff_Pct': ['mean', 'min', 'max'],
+            'Length_Diff_Pct': ['mean', 'min', 'max','count']
         }).round(2)
-        
-        # Flatten column names
-        summary_stats.columns = ['_'.join(col).strip() for col in summary_stats.columns.values]
+
+        # Flatten column names and rename them to be more descriptive
+        summary_stats.columns = [
+            'Mean Edge Difference (\%)',
+            'Min Edge Difference (\%)',
+            'Max Edge Difference (\%)',
+            'Mean Length Difference (\%)',
+            'Min Length Difference (\%)', 
+            'Max Length Difference (\%)',
+            'Number of Countries',
+
+        ]
+
         summary_stats = summary_stats.reset_index()
+        summary_stats["Dataset"] = summary_stats["Dataset"].str.replace('_150000', '').str.upper()
         
         # Print summary table
         print("\n" + "="*80)
@@ -422,8 +518,18 @@ class GraphComparison:
         print(tabulate(summary_stats, headers='keys', tablefmt='grid', showindex=False))
         
         # Save to CSV
+        scenario_mapping = {
+            'KNN Filtered': 'KNN',
+            'Randomized Filtered': 'Randomized',
+            'Original Pruned': 'Pruned'
+        }
+        summary_stats['Graph Scenario'] = summary_stats['Graph Scenario'].replace(scenario_mapping)
+
+        summary_stats = summary_stats.round(2)
+
         summary_stats.to_csv(self.output_dir / 'summary_statistics.csv', index=False)
-        
+        summary_stats.to_latex(self.output_dir / 'summary_statistics.tex', index=False, float_format="%.2f")
+
         # Country-by-country comparison
         country_comparison = differences_data.pivot_table(
             index=['Country', 'Dataset'], 
@@ -468,7 +574,7 @@ class GraphComparison:
         table_data = table_data[columns_to_show]
         
         # Sort data for better organization
-        table_data = table_data.sort_values(['Country', 'Dataset', 'Graph Scenario'])
+        table_data = table_data.sort_values(['Country', 'Dataset'])
         
         # Create longtable version
         latex_content = []
@@ -515,7 +621,7 @@ class GraphComparison:
             country = country_raw.replace('-', '--').title()
             
             dataset_raw = row['Dataset']
-            scenario = row['Graph Scenario']
+            scenario = row['Graph Scenario'].replace('Filtered', '').replace('Original Pruned', 'Pruned')
             
             # Format numbers
             edges = f"{row['Edges']:,}"
@@ -962,8 +1068,8 @@ class GraphComparison:
 def main():
     """Main function for command line usage."""
     parser = argparse.ArgumentParser(description='Compare graph filtering results between two datasets')
-    parser.add_argument('--dir1', type=str, help='First directory containing analysis results', default="/home/till/Music/ldcs_150000/")
-    parser.add_argument('--dir2', type=str, help='Second directory containing analysis results', default="/home/till/Music/oecd_150000/")
+    parser.add_argument('--dir1', type=str, help='First directory containing analysis results', default="output/ldcs_150000/")
+    parser.add_argument('--dir2', type=str, help='Second directory containing analysis results', default="output/oecd_150000/")
     parser.add_argument('--output', type=str, default='output/comparison_output', 
                        help='Output directory for comparison results')
     parser.add_argument('--verbose', '-v', action='store_true', 
