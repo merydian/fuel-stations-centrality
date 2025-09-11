@@ -43,13 +43,13 @@ class GraphComparison:
         plt.rcParams['font.sans-serif'] = ['Open Sans', 'DejaVu Sans', 'Arial', 'sans-serif']
         
         # Additional font settings for better appearance
-        plt.rcParams['font.size'] = 10
-        plt.rcParams['axes.titlesize'] = 12
-        plt.rcParams['axes.labelsize'] = 10
-        plt.rcParams['xtick.labelsize'] = 9
-        plt.rcParams['ytick.labelsize'] = 9
-        plt.rcParams['legend.fontsize'] = 12
-        plt.rcParams['figure.titlesize'] = 14
+        plt.rcParams['font.size'] = 12
+        plt.rcParams['axes.titlesize'] = 14
+        plt.rcParams['axes.labelsize'] = 12
+        plt.rcParams['xtick.labelsize'] = 12
+        plt.rcParams['ytick.labelsize'] = 12
+        plt.rcParams['legend.fontsize'] = 14
+        plt.rcParams['figure.titlesize'] = 16
         
         # Check if Open Sans is available
         available_fonts = [f.name for f in fm.fontManager.ttflist]
@@ -139,6 +139,8 @@ class GraphComparison:
         
         logger.info(f"Successfully loaded data for {len(self.combined_data['Country'].unique())} countries")
         logger.info(f"Available scenarios: {self.combined_data['Graph Scenario'].unique()}")
+        self.combined_data['Removal Scenario'] = self.combined_data['Graph Scenario']
+        self.combined_data.drop(columns=['Graph Scenario'], inplace=True)
         logger.info(f"Datasets: {self.combined_data['Dataset'].unique()}")
         logger.info(f"Station counts range: {self.combined_data['Stations_Used'].min()} - {self.combined_data['Stations_Used'].max()}")
         
@@ -157,7 +159,7 @@ class GraphComparison:
         # Calculate percentage differences for each country and scenario
         def calculate_percentage_diff(group):
             # Use 'Original' as baseline
-            original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            original = group[group['Removal Scenario'] == 'Original']['Total Length (km)'].iloc[0]
             group['Pct_Diff'] = ((group['Total Length (km)'] - original) / original) * 100
             return group
         
@@ -166,7 +168,7 @@ class GraphComparison:
         
         # Updated scenario names to match the new CSV format
         scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
-        plot_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
+        plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(scenarios_to_plot)]
         
         # Create subplots - one for each scenario
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
@@ -176,7 +178,7 @@ class GraphComparison:
         
         for idx, scenario in enumerate(scenarios_to_plot):
             ax = axes[idx]
-            scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
+            scenario_data = plot_data[plot_data['Removal Scenario'] == scenario]
             
             # Create histogram for each dataset
             for dataset in datasets:
@@ -231,7 +233,7 @@ class GraphComparison:
         # Create a summary table
         summary_stats = []
         for scenario in scenarios_to_plot:
-            scenario_data = plot_data[plot_data['Graph Scenario'] == scenario]
+            scenario_data = plot_data[plot_data['Removal Scenario'] == scenario]
             for dataset in datasets:
                 dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
                 if len(dataset_scenario_data) > 0:
@@ -265,7 +267,7 @@ class GraphComparison:
         output_path.mkdir(exist_ok=True)
         
         # Filter to only Original scenario
-        original_data = combined_data[combined_data['Graph Scenario'] == 'Original'].copy()
+        original_data = combined_data[combined_data['Removal Scenario'] == 'Original'].copy()
         
         # Create simple scatter plot
         plt.figure(figsize=(10, 6))
@@ -338,7 +340,7 @@ class GraphComparison:
         # Calculate percentage differences for each country and scenario
         def calculate_percentage_diff(group):
             # Use 'Original' as baseline
-            original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            original = group[group['Removal Scenario'] == 'Original']['Total Length (km)'].iloc[0]
             group['Length_Diff_Pct'] = ((group['Total Length (km)'] - original) / original) * 100
             return group
         
@@ -346,8 +348,8 @@ class GraphComparison:
         data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
         
         # Filter out 'Original' scenario since it will always be 0%
-        scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
-        plot_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
+        scenarios_to_plot = ['KNN Filtered', 'Randomized Filtered']
+        plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(scenarios_to_plot)]
         
         # Get unique datasets
         datasets = sorted(plot_data['Dataset'].unique())
@@ -373,7 +375,7 @@ class GraphComparison:
                 continue
             
             # Sort countries by their KNN filtering difference (ascending)
-            knn_data = dataset_data[dataset_data['Graph Scenario'] == 'KNN Filtered']
+            knn_data = dataset_data[dataset_data['Removal Scenario'] == 'KNN Filtered']
             country_knn_diffs = {}
             for country in countries_to_show:
                 country_knn_data = knn_data[knn_data['Country'] == country]
@@ -399,7 +401,7 @@ class GraphComparison:
             
             # Plot bars for each scenario
             for s_idx, scenario in enumerate(scenarios_to_plot):
-                scenario_data = dataset_data[dataset_data['Graph Scenario'] == scenario]
+                scenario_data = dataset_data[dataset_data['Removal Scenario'] == scenario]
                 
                 # Get values for filtered countries only
                 values = []
@@ -476,8 +478,14 @@ class GraphComparison:
         
         # Calculate percentage differences for each country and scenario
         def calculate_percentage_diff(group):
-            original = group[group['Graph Scenario'] == 'Original']['Total Length (km)'].iloc[0]
-            original_edges = group[group['Graph Scenario'] == 'Original']['Edges'].iloc[0]
+            # Make sure we're using the right baseline scenario
+            original_scenario = 'Original'
+            if original_scenario not in group['Removal Scenario'].values:
+                logger.warning(f"No 'Original' scenario found for {group['Country'].iloc[0]}, {group['Dataset'].iloc[0]}")
+                return group
+                
+            original = group[group['Removal Scenario'] == original_scenario]['Total Length (km)'].iloc[0]
+            original_edges = group[group['Removal Scenario'] == original_scenario]['Edges'].iloc[0]
             
             group['Length_Diff_Pct'] = ((group['Total Length (km)'] - original) / original) * 100
             group['Edge_Diff_Pct'] = ((group['Edges'] - original_edges) / original_edges) * 100
@@ -486,65 +494,75 @@ class GraphComparison:
         # Group by Country and Dataset, then calculate differences
         data_with_diff = self.combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
         
-        # Filter out 'Original' scenario
-        scenarios_to_plot = ['Original Pruned', 'KNN Filtered', 'Randomized Filtered']
-        differences_data = data_with_diff[data_with_diff['Graph Scenario'].isin(scenarios_to_plot)]
+        # Filter out 'Original' scenario and only include scenarios with actual differences
+        scenarios_to_include = ['KNN Filtered', 'Randomized Filtered']
+        differences_data = data_with_diff[data_with_diff['Removal Scenario'].isin(scenarios_to_include)]
         
-        # Summary statistics by dataset and scenario
-        summary_stats = differences_data.groupby(['Dataset', 'Graph Scenario']).agg({
+        # Debug: Check if we have non-zero values
+        logger.info(f"Max Edge difference: {differences_data['Edge_Diff_Pct'].max()}")
+        logger.info(f"Min Edge difference: {differences_data['Edge_Diff_Pct'].min()}")
+        logger.info(f"Max Length difference: {differences_data['Length_Diff_Pct'].max()}")
+        logger.info(f"Min Length difference: {differences_data['Length_Diff_Pct'].min()}")
+            # Summary statistics by dataset and scenario
+        summary_stats_edge = differences_data.groupby(['Dataset', 'Removal Scenario']).agg({
             'Edge_Diff_Pct': ['mean', 'min', 'max'],
-            'Length_Diff_Pct': ['mean', 'min', 'max','count']
+        }).round(2)
+
+        summary_stats_length = differences_data.groupby(['Dataset', 'Removal Scenario']).agg({
+            'Length_Diff_Pct': ['mean', 'min', 'max'],
         }).round(2)
 
         # Flatten column names and rename them to be more descriptive
-        summary_stats.columns = [
-            'Mean Edge Difference (\%)',
-            'Min Edge Difference (\%)',
-            'Max Edge Difference (\%)',
-            'Mean Length Difference (\%)',
-            'Min Length Difference (\%)', 
-            'Max Length Difference (\%)',
-            'Number of Countries',
-
+        summary_stats_edge.columns = [
+            'Mean (\%)',
+            'Min (\%)',
+            'Max (\%)',
         ]
 
-        summary_stats = summary_stats.reset_index()
-        summary_stats["Dataset"] = summary_stats["Dataset"].str.replace('_150000', '').str.upper()
-        
-        # Print summary table
-        print("\n" + "="*80)
-        print("SUMMARY STATISTICS: FILTERING EFFECTS")
-        print("="*80)
-        print(tabulate(summary_stats, headers='keys', tablefmt='grid', showindex=False))
-        
+        summary_stats_length.columns = [
+            'Mean (\%)',
+            'Min (\%)',
+            'Max (\%)',
+        ]
+
+        summary_stats_edge = summary_stats_edge.reset_index()
+        summary_stats_edge["Dataset"] = summary_stats_edge["Dataset"].str.replace('_150000', '').str.upper()
+
+        summary_stats_length = summary_stats_length.reset_index()
+        summary_stats_length["Dataset"] = summary_stats_length["Dataset"].str.replace('_150000', '').str.upper()
+
         # Save to CSV
         scenario_mapping = {
             'KNN Filtered': 'KNN',
             'Randomized Filtered': 'Randomized',
             'Original Pruned': 'Pruned'
         }
-        summary_stats['Graph Scenario'] = summary_stats['Graph Scenario'].replace(scenario_mapping)
+        summary_stats_edge['Removal Scenario'] = summary_stats_edge['Removal Scenario'].replace(scenario_mapping)
+        summary_stats_length['Removal Scenario'] = summary_stats_length['Removal Scenario'].replace(scenario_mapping)
 
-        summary_stats = summary_stats.round(2)
+        summary_stats_edge.to_csv(self.output_dir / 'summary_statistics_edge.csv', index=False)
+        summary_stats_edge.to_latex(self.output_dir / 'summary_statistics_edge.tex', index=False, float_format="%.2f", caption="Summary Statistics of Edge Percentage Differences by Dataset and Scenario", label="tab:summary_statistics_edge")
 
-        summary_stats.to_csv(self.output_dir / 'summary_statistics.csv', index=False)
-        summary_stats.to_latex(self.output_dir / 'summary_statistics.tex', index=False, float_format="%.2f")
+        summary_stats_length.to_csv(self.output_dir / 'summary_statistics_length.csv', index=False)
+        summary_stats_length.to_latex(self.output_dir / 'summary_statistics_length.tex', index=False, float_format="%.2f", caption="Summary Statistics of Edge Length Percentage Differences by Dataset and Scenario", label="tab:summary_statistics_length")
 
         # Country-by-country comparison
+        differences_data['Dataset'] = differences_data["Dataset"].str.replace('_150000', '').str.upper()
         country_comparison = differences_data.pivot_table(
             index=['Country', 'Dataset'], 
-            columns='Graph Scenario', 
+            columns='Removal Scenario', 
             values=['Edge_Diff_Pct', 'Length_Diff_Pct'],
             aggfunc='first'
         ).round(2)
         
         # Save detailed country comparison
         country_comparison.to_csv(self.output_dir / 'country_comparison.csv')
-        
+        country_comparison.to_latex(self.output_dir / 'country_comparison.tex', float_format="%.2f", caption="Country-by-Country Comparison of Edge and Length Percentage Differences", label="tab:country_comparison")
+
         logger.info(f"Summary tables saved to {self.output_dir}")
-        
-        return summary_stats, country_comparison
-    
+
+        return summary_stats_edge, summary_stats_length, country_comparison
+
     def create_latex_table(self, combined_data, output_dir):
         """
         Create a LaTeX table from combined_data showing only specified columns,
@@ -568,7 +586,7 @@ class GraphComparison:
         
         # Select only required columns
         columns_to_show = [
-            'Country', 'Dataset', 'Graph Scenario', 'Edges', 
+            'Country', 'Dataset', 'Removal Scenario', 'Edges', 
             'Total Length (km)', 'Avg Edge Length (km)', 'Stations_Used'
         ]
         table_data = table_data[columns_to_show]
@@ -621,7 +639,7 @@ class GraphComparison:
             country = country_raw.replace('-', '--').title()
             
             dataset_raw = row['Dataset']
-            scenario = row['Graph Scenario'].replace('Filtered', '').replace('Original Pruned', 'Pruned')
+            scenario = row['Removal Scenario'].replace('Filtered', '').replace('Original Pruned', 'Pruned')
             
             # Format numbers
             edges = f"{row['Edges']:,}"
@@ -729,7 +747,7 @@ class GraphComparison:
             country_raw = row['Country']
             country = shorten_country(country_raw.replace('-', '--').title())
             dataset_raw = row['Dataset']
-            scenario = shorten_scenario(row['Graph Scenario'])
+            scenario = shorten_scenario(row['Removal Scenario'])
             
             # Compact number formatting
             edges = f"{row['Edges']/1000:.0f}k" if row['Edges'] >= 1000 else f"{row['Edges']}"
@@ -1046,8 +1064,8 @@ class GraphComparison:
         self.create_scenario_differences_table(self.output_dir)
 
         # Generate summary tables
-        summary_stats, country_comparison = self.create_summary_tables()
-        
+        summary_stats_edge, summary_stats_length, country_comparison = self.create_summary_tables()
+
         # Create LaTeX table
         latex_files = self.create_latex_table(self.combined_data, self.output_dir)
         
@@ -1055,7 +1073,8 @@ class GraphComparison:
         logger.info(f"Missing countries report: {missing_report_file}")
         
         return {
-            'summary_stats': summary_stats,
+            'summary_stats_edge': summary_stats_edge,
+            'summary_stats_length': summary_stats_length,
             'country_comparison': country_comparison,
             'combined_data': self.combined_data,
             'latex_files': latex_files,
