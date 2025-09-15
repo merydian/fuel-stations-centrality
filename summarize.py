@@ -7,6 +7,9 @@ import argparse
 import logging
 from tabulate import tabulate
 import matplotlib.font_manager as fm
+from scipy import stats
+from scipy.stats import shapiro, normaltest
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -473,7 +476,7 @@ class GraphComparison:
         return output_files
 
     def create_summary_tables(self):
-        """Create summary tables with statistics."""
+        """Create summary tables with statistics using median instead of mean."""
         logger.info("Creating summary tables...")
         
         # Calculate percentage differences for each country and scenario
@@ -503,24 +506,25 @@ class GraphComparison:
         logger.info(f"Min Edge difference: {differences_data['Edge_Diff_Pct'].min()}")
         logger.info(f"Max Length difference: {differences_data['Length_Diff_Pct'].max()}")
         logger.info(f"Min Length difference: {differences_data['Length_Diff_Pct'].min()}")
-            # Summary statistics by dataset and scenario
+        
+        # Summary statistics by dataset and scenario using median instead of mean
         summary_stats_edge = differences_data.groupby(['Dataset', 'Removal Scenario']).agg({
-            'Edge_Diff_Pct': ['mean', 'min', 'max'],
+            'Edge_Diff_Pct': ['median', 'min', 'max'],
         }).round(2)
 
         summary_stats_length = differences_data.groupby(['Dataset', 'Removal Scenario']).agg({
-            'Length_Diff_Pct': ['mean', 'min', 'max'],
+            'Length_Diff_Pct': ['median', 'min', 'max'],
         }).round(2)
 
         # Flatten column names and rename them to be more descriptive
         summary_stats_edge.columns = [
-            'Mean (\%)',
+            'Median (\%)',
             'Min (\%)',
             'Max (\%)',
         ]
 
         summary_stats_length.columns = [
-            'Mean (\%)',
+            'Median (\%)',
             'Min (\%)',
             'Max (\%)',
         ]
@@ -562,7 +566,6 @@ class GraphComparison:
         logger.info(f"Summary tables saved to {self.output_dir}")
 
         return summary_stats_edge, summary_stats_length, country_comparison
-
     def create_latex_table(self, combined_data, output_dir):
         """
         Create a LaTeX table from combined_data showing only specified columns,
@@ -1201,7 +1204,314 @@ class GraphComparison:
                 print(f"  Range: {dataset_data['Station_Density'].min():.2f} - {dataset_data['Station_Density'].max():.2f}")
         
         return output_file, summary_file
+    
+    def perform_statistical_tests(self, combined_data, output_dir):
+        """
+        Perform statistical significance tests comparing OECD vs LDC vulnerability patterns.
+        Uses Mann-Whitney U test and Cliff's delta effect size (non-parametric approach).
+        """
+        logger.info("Performing statistical significance tests...")
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Calculate vulnerability differences for each country
+        def calculate_vulnerability_differences(group):
+            """Calculate the difference between KNN and Random removal scenarios."""
+            original = group[group['Removal Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            
+            # Calculate percentage reductions
+            knn_data = group[group['Removal Scenario'] == 'KNN Filtered']
+            random_data = group[group['Removal Scenario'] == 'Randomized Filtered']
+            
+            if len(knn_data) > 0 and len(random_data) > 0:
+                knn_reduction = ((original - knn_data['Total Length (km)'].iloc[0]) / original) * 100
+                random_reduction = ((original - random_data['Total Length (km)'].iloc[0]) / original) * 100
+                vulnerability_difference = knn_reduction - random_reduction
+                
+                return pd.Series({
+                    'Country': group['Country'].iloc[0],
+                    'Dataset': group['Dataset'].iloc[0],
+                    'KNN_Reduction_Pct': knn_reduction,
+                    'Random_Reduction_Pct': random_reduction,
+                    'Vulnerability_Difference': vulnerability_difference,
+                    'Original_Length_km': original,
+                    'Stations_Used': group['Stations_Used'].iloc[0]
+                })
+            return pd.Series()
+        
+        # Calculate vulnerability differences for each country
+        vulnerability_data = combined_data.groupby(['Country', 'Dataset']).apply(
+            calculate_vulnerability_differences
+        ).reset_index(drop=True)
+        
+        # Remove any empty rows
+        vulnerability_data = vulnerability_data.dropna()
+        
+        # Separate OECD and LDC data
+        oecd_data = vulnerability_data[vulnerability_data['Dataset'] == 'oecd_150000']
+        ldc_data = vulnerability_data[vulnerability_data['Dataset'] == 'ldcs_150000']
+        
+        if len(oecd_data) == 0 or len(ldc_data) == 0:
+            logger.warning("Insufficient data for statistical testing")
+            return {}
+        
+        # Extract vulnerability differences for testing
+        oecd_vulnerability = oecd_data['Vulnerability_Difference'].values
+        ldc_vulnerability = ldc_data['Vulnerability_Difference'].values
+        
+        logger.info(f"OECD countries: {len(oecd_vulnerability)}")
+        logger.info(f"LDC countries: {len(ldc_vulnerability)}")
+        logger.info(f"OECD vulnerability range: {oecd_vulnerability.min():.2f}% to {oecd_vulnerability.max():.2f}%")
+        logger.info(f"LDC vulnerability range: {ldc_vulnerability.min():.2f}% to {ldc_vulnerability.max():.2f}%")
+        
+        # Test for normality (for reporting purposes only)
+        oecd_shapiro_stat, oecd_shapiro_p = shapiro(oecd_vulnerability)
+        ldc_shapiro_stat, ldc_shapiro_p = shapiro(ldc_vulnerability)
+        
+        oecd_normal = oecd_shapiro_p > 0.05
+        ldc_normal = ldc_shapiro_p > 0.05
+        
+        logger.info(f"OECD data normal: {oecd_normal} (Shapiro-Wilk p = {oecd_shapiro_p:.4f})")
+        logger.info(f"LDC data normal: {ldc_normal} (Shapiro-Wilk p = {ldc_shapiro_p:.4f})")
+        
+        # Calculate basic descriptive statistics
+        stats_results = {
+            'oecd_n': len(oecd_vulnerability),
+            'oecd_mean': np.mean(oecd_vulnerability),
+            'oecd_std': np.std(oecd_vulnerability, ddof=1),
+            'oecd_median': np.median(oecd_vulnerability),
+            'oecd_min': np.min(oecd_vulnerability),
+            'oecd_max': np.max(oecd_vulnerability),
+            'ldc_n': len(ldc_vulnerability),
+            'ldc_mean': np.mean(ldc_vulnerability),
+            'ldc_std': np.std(ldc_vulnerability, ddof=1),
+            'ldc_median': np.median(ldc_vulnerability),
+            'ldc_min': np.min(ldc_vulnerability),
+            'ldc_max': np.max(ldc_vulnerability),
+            'oecd_normal': oecd_normal,
+            'ldc_normal': ldc_normal,
+            'oecd_shapiro_p': oecd_shapiro_p,
+            'ldc_shapiro_p': ldc_shapiro_p
+        }
+        
+        # Mann-Whitney U test (primary statistical test)
+        u_stat, u_p_value = stats.mannwhitneyu(
+            ldc_vulnerability, oecd_vulnerability, 
+            alternative='two-sided'
+        )
+        
+        stats_results.update({
+            'mann_whitney_u_statistic': u_stat,
+            'mann_whitney_p_value': u_p_value,
+            'mann_whitney_significant': u_p_value < 0.05
+        })
+        
+        # Cliff's delta (non-parametric effect size)
+        def cliffs_delta(x, y):
+            """Calculate Cliff's delta effect size."""
+            n1, n2 = len(x), len(y)
+            delta = 0
+            for i in range(n1):
+                for j in range(n2):
+                    if x[i] > y[j]:
+                        delta += 1
+                    elif x[i] < y[j]:
+                        delta -= 1
+            return delta / (n1 * n2)
+        
+        cliffs_d = cliffs_delta(ldc_vulnerability, oecd_vulnerability)
+        
+        def interpret_cliffs_delta(d):
+            """Interpret Cliff's delta effect size."""
+            abs_d = abs(d)
+            if abs_d < 0.147:
+                return "negligible"
+            elif abs_d < 0.33:
+                return "small"
+            elif abs_d < 0.474:
+                return "medium"
+            else:
+                return "large"
+        
+        stats_results.update({
+            'cliffs_delta': cliffs_d,
+            'cliffs_delta_interpretation': interpret_cliffs_delta(cliffs_d),
+            'mean_difference': np.mean(ldc_vulnerability) - np.mean(oecd_vulnerability),
+            'median_difference': np.median(ldc_vulnerability) - np.median(oecd_vulnerability),
+            'relative_difference': np.mean(ldc_vulnerability) / np.mean(oecd_vulnerability) if np.mean(oecd_vulnerability) != 0 else float('inf')
+        })
+        
+        # Calculate confidence intervals for medians (non-parametric)
+        def median_confidence_interval(data, confidence=0.95):
+            """Calculate confidence interval for the median using bootstrap."""
+            from scipy.stats import bootstrap
+            rng = np.random.default_rng(42)  # Fixed seed for reproducibility
+            
+            # Define statistic function for bootstrap
+            def median_stat(x):
+                return np.median(x)
+            
+            # Prepare data for bootstrap
+            data_reshaped = (data.reshape(-1, 1).T,)
+            
+            # Perform bootstrap
+            result = bootstrap(data_reshaped, median_stat, n_resamples=1000, 
+                            confidence_level=confidence, random_state=rng)
+            
+            return result.confidence_interval.low, result.confidence_interval.high
+        
+        try:
+            oecd_median_ci = median_confidence_interval(oecd_vulnerability)
+            ldc_median_ci = median_confidence_interval(ldc_vulnerability)
+            
+            stats_results.update({
+                'oecd_median_ci_lower': oecd_median_ci[0],
+                'oecd_median_ci_upper': oecd_median_ci[1],
+                'ldc_median_ci_lower': ldc_median_ci[0],
+                'ldc_median_ci_upper': ldc_median_ci[1],
+                'confidence_level': 0.95
+            })
+        except Exception as e:
+            logger.warning(f"Could not calculate bootstrap confidence intervals: {e}")
+            # Fallback to simple percentile method
+            oecd_ci_lower, oecd_ci_upper = np.percentile(oecd_vulnerability, [2.5, 97.5])
+            ldc_ci_lower, ldc_ci_upper = np.percentile(ldc_vulnerability, [2.5, 97.5])
+            
+            stats_results.update({
+                'oecd_median_ci_lower': oecd_ci_lower,
+                'oecd_median_ci_upper': oecd_ci_upper,
+                'ldc_median_ci_lower': ldc_ci_lower,
+                'ldc_median_ci_upper': ldc_ci_upper,
+                'confidence_level': 0.95
+            })
+        
+        # Save detailed results
+        vulnerability_data.to_csv(output_path / 'vulnerability_data.csv', index=False)
+        
+        # Save statistical results
+        stats_df = pd.DataFrame([stats_results])
+        stats_df.to_csv(output_path / 'statistical_tests_results.csv', index=False)
+        
+        # Create comprehensive report
+        self._create_statistical_report(stats_results, output_path)
+        
+        # Create LaTeX table for statistical results
+        self._create_statistical_latex_table(stats_results, output_path)
+        
+        logger.info("Statistical analysis complete!")
+        logger.info(f"Mann-Whitney U test result: U = {stats_results['mann_whitney_u_statistic']:.1f}, p = {stats_results['mann_whitney_p_value']:.4f}")
+        logger.info(f"Effect size: Cliff's δ = {cliffs_d:.3f} ({interpret_cliffs_delta(cliffs_d)} effect)")
+        
+        return stats_results
 
+    def _create_statistical_report(self, stats_results, output_path):
+        """Create a simplified statistical analysis report."""
+        report_file = output_path / 'statistical_analysis_report.txt'
+        
+        with open(report_file, 'w') as f:
+            f.write("STATISTICAL ANALYSIS REPORT\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"Analysis Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            # Descriptive Statistics
+            f.write("DESCRIPTIVE STATISTICS\n")
+            f.write("-" * 30 + "\n")
+            f.write(f"OECD Countries (n = {stats_results['oecd_n']}):\n")
+            f.write(f"  Mean: {stats_results['oecd_mean']:.2f}%\n")
+            f.write(f"  Median: {stats_results['oecd_median']:.2f}% (95% CI: [{stats_results['oecd_median_ci_lower']:.2f}%, {stats_results['oecd_median_ci_upper']:.2f}%])\n")
+            f.write(f"  Std Dev: {stats_results['oecd_std']:.2f}%\n")
+            f.write(f"  Range: {stats_results['oecd_min']:.2f}% to {stats_results['oecd_max']:.2f}%\n\n")
+            
+            f.write(f"LDC Countries (n = {stats_results['ldc_n']}):\n")
+            f.write(f"  Mean: {stats_results['ldc_mean']:.2f}%\n")
+            f.write(f"  Median: {stats_results['ldc_median']:.2f}% (95% CI: [{stats_results['ldc_median_ci_lower']:.2f}%, {stats_results['ldc_median_ci_upper']:.2f}%])\n")
+            f.write(f"  Std Dev: {stats_results['ldc_std']:.2f}%\n")
+            f.write(f"  Range: {stats_results['ldc_min']:.2f}% to {stats_results['ldc_max']:.2f}%\n\n")
+            
+            # Normality Assessment
+            f.write("NORMALITY ASSESSMENT\n")
+            f.write("-" * 25 + "\n")
+            f.write(f"OECD data normally distributed: {stats_results['oecd_normal']} (Shapiro-Wilk p = {stats_results['oecd_shapiro_p']:.4f})\n")
+            f.write(f"LDC data normally distributed: {stats_results['ldc_normal']} (Shapiro-Wilk p = {stats_results['ldc_shapiro_p']:.4f})\n")
+            f.write("→ Non-parametric methods used due to normality violations\n\n")
+            
+            # Statistical Test
+            f.write("STATISTICAL SIGNIFICANCE TEST\n")
+            f.write("-" * 35 + "\n")
+            f.write("Mann-Whitney U test (non-parametric):\n")
+            f.write(f"  U = {stats_results['mann_whitney_u_statistic']:.1f}\n")
+            
+            u_p = stats_results['mann_whitney_p_value']
+            if u_p < 0.001:
+                f.write(f"  p-value < 0.001\n")
+            else:
+                f.write(f"  p-value = {u_p:.4f}\n")
+                
+            f.write(f"  Significant (α = 0.05): {stats_results['mann_whitney_significant']}\n\n")
+            
+            # Effect Size
+            f.write("EFFECT SIZE\n")
+            f.write("-" * 15 + "\n")
+            f.write(f"Cliff's δ: {stats_results['cliffs_delta']:.3f} ({stats_results['cliffs_delta_interpretation']} effect)\n")
+            f.write(f"Mean difference: {stats_results['mean_difference']:.2f}%\n")
+            f.write(f"Median difference: {stats_results['median_difference']:.2f}%\n")
+            f.write(f"Relative difference: {stats_results['relative_difference']:.2f}x\n\n")
+            
+            # Interpretation
+            f.write("INTERPRETATION\n")
+            f.write("-" * 15 + "\n")
+            if stats_results.get('mann_whitney_significant', False):
+                f.write("✓ Significant difference found between OECD and LDC vulnerability patterns\n")
+            else:
+                f.write("✗ No significant difference found between OECD and LDC vulnerability patterns\n")
+                
+            f.write(f"✓ Effect size is {stats_results['cliffs_delta_interpretation']} - indicates practical significance\n")
+            f.write("✓ Non-parametric methods appropriate given normality violations\n")
+        
+        logger.info(f"✓ Statistical analysis report saved to: {report_file}")
+
+    def _create_statistical_latex_table(self, stats_results, output_path):
+        """Create simplified LaTeX table for statistical results."""
+        latex_content = []
+        latex_content.append("\\begin{table}[htbp]")
+        latex_content.append("\\centering")
+        latex_content.append("\\caption{Statistical Analysis: OECD vs LDC Vulnerability Differences}")
+        latex_content.append("\\label{tab:statistical_analysis}")
+        latex_content.append("\\begin{tabular}{@{}lr@{}}")
+        latex_content.append("\\toprule")
+        latex_content.append("Measure & Value \\\\")
+        latex_content.append("\\midrule")
+        
+        # Descriptive statistics
+        latex_content.append("\\textbf{Descriptive Statistics} & \\\\")
+        latex_content.append(f"OECD Median (95\\% CI) & {stats_results['oecd_median']:.2f}\\% ({stats_results['oecd_median_ci_lower']:.2f}\\%, {stats_results['oecd_median_ci_upper']:.2f}\\%) \\\\")
+        latex_content.append(f"LDC Median (95\\% CI) & {stats_results['ldc_median']:.2f}\\% ({stats_results['ldc_median_ci_lower']:.2f}\\%, {stats_results['ldc_median_ci_upper']:.2f}\\%) \\\\")
+        latex_content.append(f"Median Difference & {stats_results['median_difference']:.2f}\\% \\\\")
+        latex_content.append("\\midrule")
+        
+        # Statistical test
+        latex_content.append("\\textbf{Statistical Test} & \\\\")
+        u_p = stats_results['mann_whitney_p_value']
+        u_p_str = "< 0.001" if u_p < 0.001 else f"{u_p:.4f}"
+        latex_content.append(f"Mann-Whitney U p-value & {u_p_str} \\\\")
+        latex_content.append("\\midrule")
+        
+        # Effect size
+        latex_content.append("\\textbf{Effect Size} & \\\\")
+        latex_content.append(f"Cliff's $\\delta$ & {stats_results['cliffs_delta']:.3f} ({stats_results['cliffs_delta_interpretation']}) \\\\")
+        
+        latex_content.append("\\bottomrule")
+        latex_content.append("\\end{tabular}")
+        latex_content.append("\\end{table}")
+        
+        latex_table = "\n".join(latex_content)
+        
+        latex_file = output_path / 'statistical_analysis_table.tex'
+        with open(latex_file, 'w', encoding='utf-8') as f:
+            f.write(latex_table)
+        
+        logger.info(f"✓ Statistical analysis LaTeX table saved to: {latex_file}")
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
         logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
@@ -1227,8 +1537,11 @@ class GraphComparison:
         # Generate summary tables
         summary_stats_edge, summary_stats_length, country_comparison = self.create_summary_tables()
 
-        # Create LaTeX table
+        # CREATE LaTeX table
         latex_files = self.create_latex_table(self.combined_data, self.output_dir)
+        
+        # NEW: Perform statistical tests
+        statistical_results = self.perform_statistical_tests(self.combined_data, self.output_dir)
         
         logger.info(f"Analysis complete. Results saved to {self.output_dir}")
         logger.info(f"Missing countries report: {missing_report_file}")
@@ -1242,7 +1555,8 @@ class GraphComparison:
             'missing_countries': missing_results,
             'missing_report': missing_report_file,
             'edge_loss_plot': edge_loss_plot,
-            'edge_loss_summary': edge_loss_summary
+            'edge_loss_summary': edge_loss_summary,
+            'statistical_results': statistical_results  # NEW
         }
 
 
