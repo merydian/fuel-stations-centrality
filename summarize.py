@@ -1043,6 +1043,164 @@ class GraphComparison:
         
         return results, output_file
     
+    def plot_edge_length_loss_vs_stations(self, combined_data, output_dir):
+        """
+        Create scatter plots showing edge length loss vs station density for each filtering scenario.
+        """
+        logger.info("Creating edge length loss vs station density scatter plots")
+        
+        output_path = Path(output_dir)
+        output_path.mkdir(exist_ok=True)
+        
+        # Calculate percentage differences for each country and scenario
+        def calculate_percentage_diff(group):
+            # Use 'Original' as baseline
+            original = group[group['Removal Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            group['Length_Loss_Pct'] = ((original - group['Total Length (km)']) / original) * 100
+            # Calculate station density (stations per 1000 km of road network)
+            group['Station_Density'] = (group['Stations_Used'] / original) * 1000
+            return group
+        
+        # Group by Country and Dataset, then calculate differences
+        data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
+        
+        # Filter to only include filtering scenarios (exclude Original and Original Pruned)
+        filtering_scenarios = ['KNN Filtered', 'Randomized Filtered']
+        plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(filtering_scenarios)]
+        
+        # Create separate plots for each scenario
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        
+        datasets = plot_data['Dataset'].unique()
+        
+        for idx, scenario in enumerate(filtering_scenarios):
+            ax = axes[idx]
+            scenario_data = plot_data[plot_data['Removal Scenario'] == scenario]
+            
+            # Plot for each dataset
+            for dataset in datasets:
+                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
+                
+                if len(dataset_scenario_data) > 0:
+                    x_vals = dataset_scenario_data['Station_Density']
+                    y_vals = dataset_scenario_data['Length_Loss_Pct']
+                    
+                    # Custom label mapping
+                    label_mapping = {
+                        'ldcs_150000': 'Least Developed Countries',
+                        'oecd_150000': 'OECD Countries'
+                    }
+                    custom_label = label_mapping.get(dataset, dataset)
+                    
+                    ax.scatter(x_vals, y_vals,
+                            label=f'{custom_label} (n={len(dataset_scenario_data)})',
+                            color=self.dataset_colors.get(dataset, '#CCCCCC'),
+                            alpha=0.6,
+                            s=40,
+                            edgecolors='black',
+                            linewidth=0.5)
+            
+            # Set log scale for both axes
+            ax.set_xscale('log')
+            ax.set_yscale('log')
+            
+            # Format axes
+            from matplotlib.ticker import FuncFormatter
+            
+            def density_formatter(x, pos):
+                if x >= 1:
+                    return f'{x:.1f}'
+                else:
+                    return f'{x:.2f}'
+                    
+            def percentage_formatter(x, pos):
+                if x >= 1:
+                    return f'{x:.1f}%'
+                else:
+                    return f'{x:.2f}%'
+            
+            ax.xaxis.set_major_formatter(FuncFormatter(density_formatter))
+            ax.yaxis.set_major_formatter(FuncFormatter(percentage_formatter))
+            
+            # Set labels and title
+            ax.set_xlabel('Station Density (stations per 1000 km road, log scale)')
+            ax.set_ylabel('Edge Length Loss (%, log scale)')
+            ax.set_title(f'{scenario}')
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            
+            # Set reasonable axis limits
+            if len(scenario_data) > 0:
+                x_min = max(0.01, scenario_data['Station_Density'].min() * 0.8)
+                x_max = scenario_data['Station_Density'].max() * 1.2
+                y_min = max(0.01, scenario_data['Length_Loss_Pct'].min() * 0.8)
+                y_max = scenario_data['Length_Loss_Pct'].max() * 1.2
+                ax.set_xlim(x_min, x_max)
+                ax.set_ylim(y_min, y_max)
+        
+        plt.suptitle('Edge Length Loss vs Station Density (Log-Log Scale)', fontsize=16)
+        plt.tight_layout()
+        
+        # Save the plot
+        output_file = output_path / 'edge_length_loss_vs_station_density.png'
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        logger.info(f"✓ Edge length loss vs station density plot saved to: {output_file}")
+        
+        # Create summary statistics
+        summary_stats = []
+        for scenario in filtering_scenarios:
+            scenario_data = plot_data[plot_data['Removal Scenario'] == scenario]
+            for dataset in datasets:
+                dataset_scenario_data = scenario_data[scenario_data['Dataset'] == dataset]
+                if len(dataset_scenario_data) > 0:
+                    # Calculate correlation between log(density) and log(length loss)
+                    log_density = np.log10(dataset_scenario_data['Station_Density'].replace(0, 0.01))
+                    log_loss = np.log10(dataset_scenario_data['Length_Loss_Pct'].replace(0, 0.01))
+                    correlation = log_density.corr(log_loss)
+                    
+                    summary_stats.append({
+                        'Scenario': scenario,
+                        'Dataset': dataset,
+                        'Mean_Station_Density': dataset_scenario_data['Station_Density'].mean(),
+                        'Std_Station_Density': dataset_scenario_data['Station_Density'].std(),
+                        'Mean_Length_Loss_Pct': dataset_scenario_data['Length_Loss_Pct'].mean(),
+                        'Std_Length_Loss_Pct': dataset_scenario_data['Length_Loss_Pct'].std(),
+                        'Min_Length_Loss_Pct': dataset_scenario_data['Length_Loss_Pct'].min(),
+                        'Max_Length_Loss_Pct': dataset_scenario_data['Length_Loss_Pct'].max(),
+                        'Log_Correlation_Density_Loss': correlation,
+                        'Countries_Count': len(dataset_scenario_data)
+                    })
+        
+        summary_df = pd.DataFrame(summary_stats)
+        
+        # Save summary statistics
+        summary_file = output_path / 'edge_length_loss_vs_station_density_summary.csv'
+        summary_df.to_csv(summary_file, index=False)
+        logger.info(f"✓ Summary statistics saved to: {summary_file}")
+        
+        # Print correlation insights
+        print("\nLog-Log Correlation between Station Density and Edge Length Loss:")
+        print("=" * 70)
+        for _, row in summary_df.iterrows():
+            print(f"{row['Scenario']} - {row['Dataset']}: r = {row['Log_Correlation_Density_Loss']:.3f}")
+        
+        # Print some density statistics
+        print("\nStation Density Statistics (stations per 1000 km road):")
+        print("=" * 60)
+        for dataset in datasets:
+            dataset_data = plot_data[plot_data['Dataset'] == dataset]
+            if len(dataset_data) > 0:
+                label_mapping = {
+                    'ldcs_150000': 'Least Developed Countries',
+                    'oecd_150000': 'OECD Countries'
+                }
+                custom_label = label_mapping.get(dataset, dataset)
+                print(f"{custom_label}:")
+                print(f"  Mean: {dataset_data['Station_Density'].mean():.2f}")
+                print(f"  Median: {dataset_data['Station_Density'].median():.2f}")
+                print(f"  Range: {dataset_data['Station_Density'].min():.2f} - {dataset_data['Station_Density'].max():.2f}")
+        
+        return output_file, summary_file
 
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
@@ -1060,6 +1218,9 @@ class GraphComparison:
         self.plot_scenario_differences(self.combined_data, self.output_dir)
         self.plot_stations_scatter(self.combined_data, self.output_dir)
         self.plot_length_differences_by_dataset(self.combined_data, self.output_dir)
+        
+        # Add the new edge length loss vs stations plot
+        edge_loss_plot, edge_loss_summary = self.plot_edge_length_loss_vs_stations(self.combined_data, self.output_dir)
 
         self.create_scenario_differences_table(self.output_dir)
 
@@ -1079,7 +1240,9 @@ class GraphComparison:
             'combined_data': self.combined_data,
             'latex_files': latex_files,
             'missing_countries': missing_results,
-            'missing_report': missing_report_file
+            'missing_report': missing_report_file,
+            'edge_loss_plot': edge_loss_plot,
+            'edge_loss_summary': edge_loss_summary
         }
 
 
