@@ -29,8 +29,8 @@ class GraphComparison:
         }
         
         self.dataset_colors = {
-            'ldcs_150000': '#99C24D',
-            'oecd_150000': '#692537'
+            'ldcs_150000': "#22AAE0",
+            'oecd_150000': "#DB0A42"
         }
         
         # Configure matplotlib for better plots
@@ -332,23 +332,43 @@ class GraphComparison:
     def plot_length_differences_by_dataset(self, combined_data, output_dir):
         """
         Create separate bar plots for each dataset showing total length differences by country.
+        Includes KNN, Random, and Vulnerability (difference between them) as separate bars.
+        Countries are sorted by vulnerability.
         """
-        logger.info("Creating length differences bar plots per dataset")
+        logger.info("Creating length differences bar plots per dataset (with vulnerability bar)")
         
         combined_data = combined_data[combined_data["Country"] != "iceland"]
-
+    
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
         
-        # Calculate percentage differences for each country and scenario
-        def calculate_percentage_diff(group):
+        # Calculate percentage differences and vulnerability for each country and scenario
+        def calculate_percentage_diff_and_vulnerability(group):
             # Use 'Original' as baseline
             original = group[group['Removal Scenario'] == 'Original']['Total Length (km)'].iloc[0]
+            
+            # Calculate percentage difference from original for each scenario
             group['Length_Diff_Pct'] = ((group['Total Length (km)'] - original) / original) * 100
+            
+            # Calculate vulnerability as percentage difference between KNN and Random scenarios
+            knn_data = group[group['Removal Scenario'] == 'KNN Filtered']
+            random_data = group[group['Removal Scenario'] == 'Randomized Filtered']
+            
+            if len(knn_data) > 0 and len(random_data) > 0:
+                knn_pct = knn_data['Length_Diff_Pct'].iloc[0]
+                random_pct = random_data['Length_Diff_Pct'].iloc[0]
+                # Vulnerability = |KNN reduction| - |Random reduction|
+                vulnerability = abs(knn_pct) - abs(random_pct)
+            else:
+                vulnerability = 0
+                
+            group['Vulnerability'] = vulnerability
             return group
         
-        # Group by Country and Dataset, then calculate differences
-        data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(calculate_percentage_diff).reset_index(drop=True)
+        # Group by Country and Dataset, then calculate differences and vulnerability
+        data_with_diff = combined_data.groupby(['Country', 'Dataset']).apply(
+            calculate_percentage_diff_and_vulnerability
+        ).reset_index(drop=True)
         
         # Filter out 'Original' scenario since it will always be 0%
         scenarios_to_plot = ['KNN Filtered', 'Randomized Filtered']
@@ -362,47 +382,51 @@ class GraphComparison:
         for dataset in datasets:
             dataset_data = plot_data[plot_data['Dataset'] == dataset]
             dataset_data["Country"] = dataset_data["Country"].str.replace('-', '--').str.title()
-
-            all_countries = sorted(dataset_data['Country'].unique())
+    
+            # Get unique countries and their vulnerabilities
+            country_vulnerabilities = {}
+            all_countries = dataset_data['Country'].unique()
             
-            # Filter countries with difference > 0.5% in any scenario
+            for country in all_countries:
+                country_data = dataset_data[dataset_data['Country'] == country]
+                if len(country_data) > 0:
+                    vulnerability = country_data['Vulnerability'].iloc[0]
+                    country_vulnerabilities[country] = vulnerability
+            
+            # Filter countries with difference > 0.5% in any scenario OR vulnerability > 0.5%
             countries_to_show = []
             for country in all_countries:
                 country_data = dataset_data[dataset_data['Country'] == country]
                 max_diff = country_data['Length_Diff_Pct'].abs().max()
-                if max_diff > 0.5:
+                vulnerability = country_vulnerabilities.get(country, 0)
+                if max_diff > 0.5 or abs(vulnerability) > 0.5:
                     countries_to_show.append(country)
             
             if not countries_to_show:
-                logger.info(f"No countries with >0.5% difference found in {dataset}")
+                logger.info(f"No countries with >0.5% difference or vulnerability found in {dataset}")
                 continue
             
-            # Sort countries by their KNN filtering difference (ascending)
-            knn_data = dataset_data[dataset_data['Removal Scenario'] == 'KNN Filtered']
-            country_knn_diffs = {}
-            for country in countries_to_show:
-                country_knn_data = knn_data[knn_data['Country'] == country]
-                if len(country_knn_data) > 0:
-                    country_knn_diffs[country] = abs(country_knn_data['Length_Diff_Pct'].iloc[0])
-                else:
-                    country_knn_diffs[country] = 0
+            # Sort countries by vulnerability (ascending order)
+            countries_to_show = sorted(countries_to_show, key=lambda x: country_vulnerabilities.get(x, 0))
             
-            # Sort countries by KNN difference in ascending order
-            countries_to_show = sorted(countries_to_show, key=lambda x: country_knn_diffs[x])
+            logger.info(f"Showing {len(countries_to_show)} countries in {dataset}, sorted by vulnerability")
+            logger.info(f"Vulnerability range: {min(country_vulnerabilities.values()):.2f}% to {max(country_vulnerabilities.values()):.2f}%")
             
-            logger.info(f"Showing {len(countries_to_show)} countries with >0.5% difference in {dataset}, sorted by KNN difference")
-            
-            # Set up the plot
+            # Set up the plot with three bars: KNN, Random, Vulnerability
             fig, ax = plt.subplots(figsize=(max(15, len(countries_to_show) * 0.8), 8))
             
-            # Set bar width and positions
+            # Set bar width and positions for three bars
             bar_width = 0.25
             x = np.arange(len(countries_to_show))
             
-            # Track countries with zero differences for note
-            zero_diff_countries = []
+            # Colors for the three bars
+            colors = {
+                'KNN Filtered': "#F5CB5C",      # Orange
+                'Randomized Filtered': "#DD7373", # Green  
+                'Vulnerability': "#16F4D0"       # Red
+            }
             
-            # Plot bars for each scenario
+            # Plot bars for KNN and Random scenarios
             for s_idx, scenario in enumerate(scenarios_to_plot):
                 scenario_data = dataset_data[dataset_data['Removal Scenario'] == scenario]
                 
@@ -412,12 +436,8 @@ class GraphComparison:
                     country_data = scenario_data[scenario_data['Country'] == country]
                     if len(country_data) > 0:
                         diff_pct = country_data['Length_Diff_Pct'].iloc[0]
-                        # Use absolute value of the percentage difference
+                        # Use absolute value of the percentage difference for plotting
                         values.append(abs(diff_pct))
-                        
-                        # Check if difference is exactly 0 for this scenario
-                        if diff_pct == 0 and country not in zero_diff_countries:
-                            zero_diff_countries.append(country)
                     else:
                         values.append(0)
                 
@@ -427,13 +447,23 @@ class GraphComparison:
                 # Plot bars
                 ax.bar(x + offset, values, 
                     bar_width, 
-                    label=scenario,
-                    color=self.scenario_colors.get(scenario, '#CCCCCC'),
+                    label=scenario.replace(' Filtered', ''),
+                    color=colors[scenario],
                     alpha=0.8,
                     edgecolor='black',
                     linewidth=0.5)
             
-            # Customize the plot - make y-axis more readable
+            # Add vulnerability as third bar
+            vulnerability_values = [country_vulnerabilities.get(country, 0) for country in countries_to_show]
+            ax.bar(x + bar_width, vulnerability_values, 
+                bar_width, 
+                label='Vulnerability',
+                color=colors['Vulnerability'],
+                alpha=0.8,
+                edgecolor='black',
+                linewidth=0.5)
+            
+            # Customize the plot
             from matplotlib.ticker import FuncFormatter
             
             def percentage_formatter(x, pos):
@@ -442,20 +472,35 @@ class GraphComparison:
                 else:
                     return f'{x:.1f}%'
             
-            # Use linear scale instead of log for better readability
-            ax.set_xlabel('Country (sorted by KNN filtering difference, ascending)')
-            ax.set_ylabel('Absolute Length Difference from Original (%)')
-            ax.set_title(f'Total Length Changes by Country - {dataset.upper()}\n(Countries with >0.5% difference, sorted by KNN effect)')
+            ax.set_xlabel('Country (sorted by vulnerability)')
+            ax.set_ylabel('Percentage Difference (%)')
+            
+            # Create title with vulnerability information
+            vuln_range = f"{min(country_vulnerabilities.values()):.1f}% to {max(country_vulnerabilities.values()):.1f}%"
+            ax.set_title(f'Network Length Changes by Country - {dataset.upper()}\n'
+                        f'KNN & Random: Reduction from Original | Vulnerability: KNN - Random\n'
+                        f'Vulnerability range: {vuln_range}')
+            
             ax.set_xticks(x)
             ax.set_xticklabels(countries_to_show, rotation=45, ha='right')
             
             # Set reasonable y-axis limits and formatting
-            max_val = max([max(values) for values in [ax.containers[i].datavalues for i in range(len(scenarios_to_plot))]] + [1])
-            ax.set_ylim(0, max_val * 1.1)
-            ax.yaxis.set_major_formatter(FuncFormatter(percentage_formatter))
+            all_values = []
+            for container in ax.containers:
+                all_values.extend(container.datavalues)
+            max_val = max(all_values) if all_values else 1
             
+            # Handle negative vulnerability values
+            min_val = min(all_values) if all_values else 0
+            y_margin = max(abs(max_val), abs(min_val)) * 0.1
+            ax.set_ylim(min_val - y_margin, max_val + y_margin)
+            
+            ax.yaxis.set_major_formatter(FuncFormatter(percentage_formatter))
             ax.grid(True, alpha=0.3, axis='y')
             ax.legend()
+            
+            # Add horizontal line at y=0 for reference
+            ax.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=0.5)
             
             plt.tight_layout()
             
@@ -465,13 +510,14 @@ class GraphComparison:
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             logger.info(f"✓ Length differences bar plot for {dataset} saved to: {output_file}")
             
-            # Log countries with zero differences
-            if zero_diff_countries:
-                logger.info(f"Countries with 0% difference in {dataset}: {zero_diff_countries}")
+            # Log vulnerability statistics for this dataset
+            vulnerabilities = list(country_vulnerabilities.values())
+            logger.info(f"Vulnerability statistics for {dataset}:")
+            logger.info(f"  Mean: {np.mean(vulnerabilities):.2f}%")
+            logger.info(f"  Median: {np.median(vulnerabilities):.2f}%")
+            logger.info(f"  Range: {min(vulnerabilities):.2f}% to {max(vulnerabilities):.2f}%")
             
             output_files.append(output_file)
-            
-            # plt.show()
         
         return output_files
 
@@ -566,6 +612,7 @@ class GraphComparison:
         logger.info(f"Summary tables saved to {self.output_dir}")
 
         return summary_stats_edge, summary_stats_length, country_comparison
+    
     def create_latex_table(self, combined_data, output_dir):
         """
         Create a LaTeX table from combined_data showing only specified columns,
@@ -1472,46 +1519,109 @@ class GraphComparison:
         logger.info(f"✓ Statistical analysis report saved to: {report_file}")
 
     def _create_statistical_latex_table(self, stats_results, output_path):
-        """Create simplified LaTeX table for statistical results."""
+        """Create a comprehensive and readable LaTeX table for statistical results."""
         latex_content = []
         latex_content.append("\\begin{table}[htbp]")
         latex_content.append("\\centering")
         latex_content.append("\\caption{Statistical Analysis: OECD vs LDC Vulnerability Differences}")
         latex_content.append("\\label{tab:statistical_analysis}")
-        latex_content.append("\\begin{tabular}{@{}lr@{}}")
+        latex_content.append("\\begin{tabular}{@{}p{4.5cm}p{6cm}@{}}")
         latex_content.append("\\toprule")
-        latex_content.append("Measure & Value \\\\")
+        latex_content.append("\\textbf{Measure} & \\textbf{Value} \\\\")
         latex_content.append("\\midrule")
         
-        # Descriptive statistics
+        # Sample sizes
+        latex_content.append("\\textbf{Sample Sizes} & \\\\")
+        latex_content.append(f"OECD Countries & {stats_results['oecd_n']} \\\\")
+        latex_content.append(f"LDC Countries & {stats_results['ldc_n']} \\\\")
+        latex_content.append("\\addlinespace")
+        
+        # Descriptive statistics - reorganized for better readability
         latex_content.append("\\textbf{Descriptive Statistics} & \\\\")
-        latex_content.append(f"OECD Median (95\\% CI) & {stats_results['oecd_median']:.2f}\\% ({stats_results['oecd_median_ci_lower']:.2f}\\%, {stats_results['oecd_median_ci_upper']:.2f}\\%) \\\\")
-        latex_content.append(f"LDC Median (95\\% CI) & {stats_results['ldc_median']:.2f}\\% ({stats_results['ldc_median_ci_lower']:.2f}\\%, {stats_results['ldc_median_ci_upper']:.2f}\\%) \\\\")
-        latex_content.append(f"Median Difference & {stats_results['median_difference']:.2f}\\% \\\\")
+        latex_content.append("\\textit{OECD Countries:} & \\\\")
+        latex_content.append(f"\\quad Mean $\\pm$ SD & {stats_results['oecd_mean']:.2f}\\% $\\pm$ {stats_results['oecd_std']:.2f}\\% \\\\")
+        latex_content.append(f"\\quad Median (95\\% CI) & {stats_results['oecd_median']:.2f}\\% ({stats_results['oecd_median_ci_lower']:.2f}\\%, {stats_results['oecd_median_ci_upper']:.2f}\\%) \\\\")
+        latex_content.append(f"\\quad Range & {stats_results['oecd_min']:.2f}\\% to {stats_results['oecd_max']:.2f}\\% \\\\")
+        latex_content.append("\\addlinespace[0.5em]")
+        
+        latex_content.append("\\textit{LDC Countries:} & \\\\")
+        latex_content.append(f"\\quad Mean $\\pm$ SD & {stats_results['ldc_mean']:.2f}\\% $\\pm$ {stats_results['ldc_std']:.2f}\\% \\\\")
+        latex_content.append(f"\\quad Median (95\\% CI) & {stats_results['ldc_median']:.2f}\\% ({stats_results['ldc_median_ci_lower']:.2f}\\%, {stats_results['ldc_median_ci_upper']:.2f}\\%) \\\\")
+        latex_content.append(f"\\quad Range & {stats_results['ldc_min']:.2f}\\% to {stats_results['ldc_max']:.2f}\\% \\\\")
+        latex_content.append("\\addlinespace")
+        
+        # Group differences
+        latex_content.append("\\textbf{Group Differences} & \\\\")
+        latex_content.append(f"Mean Difference (LDC - OECD) & {stats_results['mean_difference']:.2f}\\% \\\\")
+        latex_content.append(f"Median Difference (LDC - OECD) & {stats_results['median_difference']:.2f}\\% \\\\")
+        latex_content.append(f"Relative Difference & {stats_results['relative_difference']:.1f}$\\times$ higher in LDCs \\\\")
         latex_content.append("\\midrule")
         
-        # Statistical test
-        latex_content.append("\\textbf{Statistical Test} & \\\\")
+        # Normality assessment
+        latex_content.append("\\textbf{Normality Assessment} & \\\\")
+        oecd_normal_text = "Yes" if stats_results['oecd_normal'] else "No"
+        ldc_normal_text = "Yes" if stats_results['ldc_normal'] else "No"
+        latex_content.append(f"OECD data normally distributed & {oecd_normal_text} (Shapiro-Wilk $p = {stats_results['oecd_shapiro_p']:.4f}$) \\\\")
+        latex_content.append(f"LDC data normally distributed & {ldc_normal_text} (Shapiro-Wilk $p = {stats_results['ldc_shapiro_p']:.4f}$) \\\\")
+        latex_content.append("\\midrule")
+        
+        # Statistical test results
+        latex_content.append("\\textbf{Statistical Significance Test} & \\\\")
+        latex_content.append("Test Used & Mann-Whitney U (non-parametric) \\\\")
+        latex_content.append(f"U Statistic & {stats_results['mann_whitney_u_statistic']:.1f} \\\\")
+        
+        # Format p-value appropriately
         u_p = stats_results['mann_whitney_p_value']
-        u_p_str = "< 0.001" if u_p < 0.001 else f"{u_p:.4f}"
-        latex_content.append(f"Mann-Whitney U p-value & {u_p_str} \\\\")
+        if u_p < 0.001:
+            u_p_str = "< 0.001"
+        elif u_p < 0.01:
+            u_p_str = f"< 0.01"
+        else:
+            u_p_str = f"{u_p:.4f}"
+        
+        latex_content.append(f"$p$-value & {u_p_str} \\\\")
+        
+        significance_text = "Yes" if stats_results['mann_whitney_significant'] else "No"
+        latex_content.append(f"Statistically Significant ($\\alpha = 0.05$) & {significance_text} \\\\")
         latex_content.append("\\midrule")
         
         # Effect size
-        latex_content.append("\\textbf{Effect Size} & \\\\")
-        latex_content.append(f"Cliff's $\\delta$ & {stats_results['cliffs_delta']:.3f} ({stats_results['cliffs_delta_interpretation']}) \\\\")
+        latex_content.append("\\textbf{Effect Size Assessment} & \\\\")
+        latex_content.append(f"Cliff's $\\delta$ & {stats_results['cliffs_delta']:.3f} \\\\")
+        latex_content.append(f"Effect Size Interpretation & {stats_results['cliffs_delta_interpretation'].title()} effect \\\\")
+        
+        # Add interpretation note
+        effect_desc = {
+            'negligible': 'minimal practical difference',
+            'small': 'small practical difference', 
+            'medium': 'moderate practical difference',
+            'large': 'substantial practical difference'
+        }
+        effect_explanation = effect_desc.get(stats_results['cliffs_delta_interpretation'], 'practical difference')
+        latex_content.append(f"Practical Significance & {effect_explanation.title()} \\\\")
         
         latex_content.append("\\bottomrule")
         latex_content.append("\\end{tabular}")
+        
+        # Add table notes
+        latex_content.append("\\begin{tablenotes}")
+        latex_content.append("\\footnotesize")
+        latex_content.append("\\item Note: Vulnerability difference represents the percentage difference between strategic (KNN) and random station removal scenarios. Non-parametric methods were used due to normality violations in OECD data.")
+        latex_content.append("\\end{tablenotes}")
+        
         latex_content.append("\\end{table}")
         
         latex_table = "\n".join(latex_content)
         
         latex_file = output_path / 'statistical_analysis_table.tex'
         with open(latex_file, 'w', encoding='utf-8') as f:
+            f.write("% Statistical Analysis LaTeX Table\n")
+            f.write("% Requires packages: booktabs, array, threeparttable\n")
+            f.write("% Usage: \\input{statistical_analysis_table.tex}\n\n")
             f.write(latex_table)
         
         logger.info(f"✓ Statistical analysis LaTeX table saved to: {latex_file}")
+        
     def run_full_analysis(self):
         """Run the complete comparison analysis."""
         logger.info(f"Starting full analysis: {self.dir1.name} vs {self.dir2.name}")
