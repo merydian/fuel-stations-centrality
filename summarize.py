@@ -46,13 +46,13 @@ class GraphComparison:
         plt.rcParams['font.sans-serif'] = ['Open Sans', 'DejaVu Sans', 'Arial', 'sans-serif']
         
         # Additional font settings for better appearance
-        plt.rcParams['font.size'] = 12
-        plt.rcParams['axes.titlesize'] = 14
-        plt.rcParams['axes.labelsize'] = 12
-        plt.rcParams['xtick.labelsize'] = 12
-        plt.rcParams['ytick.labelsize'] = 12
-        plt.rcParams['legend.fontsize'] = 14
-        plt.rcParams['figure.titlesize'] = 16
+        plt.rcParams['font.size'] = 10
+        plt.rcParams['axes.titlesize'] = 10
+        plt.rcParams['axes.labelsize'] = 8
+        plt.rcParams['xtick.labelsize'] = 8
+        plt.rcParams['ytick.labelsize'] = 8
+        plt.rcParams['legend.fontsize'] = 6
+        plt.rcParams['figure.titlesize'] = 12
         
         # Check if Open Sans is available
         available_fonts = [f.name for f in fm.fontManager.ttflist]
@@ -174,7 +174,7 @@ class GraphComparison:
         plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(scenarios_to_plot)]
         
         # Create subplots - one for each scenario
-        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        fig, axes = plt.subplots(2, 2, figsize=(5.81, 4.0))
         axes = axes.flatten()
         
         datasets = plot_data['Dataset'].unique()
@@ -200,7 +200,7 @@ class GraphComparison:
             ax.set_xlabel('Percentage Change from Original (%)')
             ax.set_ylabel('Frequency (Number of Countries)')
             ax.set_title(f'{scenario} vs Original')
-            ax.legend()
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05), ncol=3)
             ax.grid(True, alpha=0.3)
             ax.axvline(x=0, color='red', linestyle='--', alpha=0.5, linewidth=1)
             
@@ -223,7 +223,7 @@ class GraphComparison:
         if len(scenarios_to_plot) < 4:
             fig.delaxes(axes[3])
         
-        plt.suptitle('Total Length Percentage Changes by Scenario and Dataset', fontsize=16)
+        # plt.suptitle('Total Length Percentage Changes by Scenario and Dataset', fontsize=16)
         plt.tight_layout()
         
         # Save the plot
@@ -273,7 +273,7 @@ class GraphComparison:
         original_data = combined_data[combined_data['Removal Scenario'] == 'Original'].copy()
         
         # Create simple scatter plot
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(5.81, 4.0))
         
         datasets = original_data['Dataset'].unique()
 
@@ -289,11 +289,55 @@ class GraphComparison:
             }
             custom_label = label_mapping.get(dataset, dataset)
             
-            plt.scatter(data_subset['Stations_Used'], data_subset['Total Length (km)'], 
+            # Get data for regression
+            x_data = data_subset['Stations_Used'].values
+            y_data = data_subset['Total Length (km)'].values
+            
+            # Remove any zero values for log regression
+            valid_mask = (x_data > 0) & (y_data > 0)
+            x_valid = x_data[valid_mask]
+            y_valid = y_data[valid_mask]
+            
+            # Plot scatter points
+            plt.scatter(x_valid, y_valid, 
                 label=custom_label,  # Use custom label instead of dataset
                 color=self.dataset_colors.get(dataset, '#CCCCCC'),
-                alpha=0.4,
-                s=20)
+                alpha=0.6,
+                s=5)
+
+            
+            # Fit regression line in log space
+            if len(x_valid) > 1:
+                # Log-log regression
+                log_x = np.log10(x_valid)
+                log_y = np.log10(y_valid)
+                
+                # Linear regression in log space
+                coeffs = np.polyfit(log_x, log_y, 1)
+                slope, intercept = coeffs
+                
+                # Generate points for regression line
+                x_range = np.logspace(np.log10(x_valid.min()), np.log10(x_valid.max()), 100)
+                y_regression = 10**(slope * np.log10(x_range) + intercept)
+                
+                # Plot regression line
+                plt.plot(x_range, y_regression, 
+                        color=self.dataset_colors.get(dataset, '#CCCCCC'),
+                        linestyle='--',
+                        linewidth=.5,
+                        alpha=0.8)
+                
+                # Add R² to legend
+                r_squared = np.corrcoef(log_x, log_y)[0, 1]**2
+                print(f"{custom_label}: R² = {r_squared:.3f}, slope = {slope:.3f}")
+            else:
+                x_valid = x_data
+                y_valid = y_data
+                plt.scatter(x_valid, y_valid, 
+                    label=custom_label,
+                    color=self.dataset_colors.get(dataset, '#CCCCCC'),
+                    alpha=0.6,
+                    s=20)
     
         plt.xscale('log')
         plt.yscale('log')
@@ -316,7 +360,6 @@ class GraphComparison:
         
         plt.xlabel('Number of Stations')
         plt.ylabel('Total Road Network Length (km)')
-        plt.title('Stations vs Total Road Network Length')
         plt.legend()
         plt.grid(True, alpha=0.3)
         
@@ -337,7 +380,7 @@ class GraphComparison:
         """
         logger.info("Creating length differences bar plots per dataset (with vulnerability bar)")
         
-        combined_data = combined_data[combined_data["Country"] != "iceland"]
+        # combined_data = combined_data[combined_data["Country"] != "iceland"]
     
         output_path = Path(output_dir)
         output_path.mkdir(exist_ok=True)
@@ -381,7 +424,7 @@ class GraphComparison:
         output_files = []
         for dataset in datasets:
             dataset_data = plot_data[plot_data['Dataset'] == dataset]
-            dataset_data["Country"] = dataset_data["Country"].str.replace('-', '--').str.title()
+            dataset_data["Country"] = dataset_data["Country"].str.title()
     
             # Get unique countries and their vulnerabilities
             country_vulnerabilities = {}
@@ -413,7 +456,7 @@ class GraphComparison:
             logger.info(f"Vulnerability range: {min(country_vulnerabilities.values()):.2f}% to {max(country_vulnerabilities.values()):.2f}%")
             
             # Set up the plot with three bars: KNN, Random, Vulnerability
-            fig, ax = plt.subplots(figsize=(max(15, len(countries_to_show) * 0.8), 8))
+            fig, ax = plt.subplots(figsize=(5.81, 5.0))
             
             # Set bar width and positions for three bars
             bar_width = 0.25
@@ -451,7 +494,7 @@ class GraphComparison:
                     color=colors[scenario],
                     alpha=0.8,
                     edgecolor='black',
-                    linewidth=0.5)
+                    linewidth=0.2)
             
             # Add vulnerability as third bar
             vulnerability_values = [country_vulnerabilities.get(country, 0) for country in countries_to_show]
@@ -461,7 +504,7 @@ class GraphComparison:
                 color=colors['Vulnerability'],
                 alpha=0.8,
                 edgecolor='black',
-                linewidth=0.5)
+                linewidth=0.2)
             
             # Customize the plot
             from matplotlib.ticker import FuncFormatter
@@ -472,32 +515,24 @@ class GraphComparison:
                 else:
                     return f'{x:.1f}%'
             
-            ax.set_xlabel('Country (sorted by vulnerability)')
+            ax.set_xlabel('Country')
             ax.set_ylabel('Percentage Difference (%)')
             
             # Create title with vulnerability information
             vuln_range = f"{min(country_vulnerabilities.values()):.1f}% to {max(country_vulnerabilities.values()):.1f}%"
-            ax.set_title(f'Network Length Changes by Country - {dataset.upper()}\n'
-                        f'KNN & Random: Reduction from Original | Vulnerability: KNN - Random\n'
-                        f'Vulnerability range: {vuln_range}')
+            # ax.set_title(f'Network Length Changes by Country - {dataset.upper()}\n'
+            #             f'KNN & Random: Reduction from Original | Vulnerability: KNN - Random\n'
+            #             f'Vulnerability range: {vuln_range}')
             
             ax.set_xticks(x)
             ax.set_xticklabels(countries_to_show, rotation=45, ha='right')
-            
-            # Set reasonable y-axis limits and formatting
-            all_values = []
-            for container in ax.containers:
-                all_values.extend(container.datavalues)
-            max_val = max(all_values) if all_values else 1
-            
-            # Handle negative vulnerability values
-            min_val = min(all_values) if all_values else 0
-            y_margin = max(abs(max_val), abs(min_val)) * 0.1
-            ax.set_ylim(min_val - y_margin, max_val + y_margin)
+
+            ax.set_ylim(-20, 90)  # Set y-axis limits to show negative vulnerabilities clearly
             
             ax.yaxis.set_major_formatter(FuncFormatter(percentage_formatter))
             ax.grid(True, alpha=0.3, axis='y')
-            ax.legend()
+            ax.legend(loc='upper center', bbox_to_anchor=(0.4, 1),
+          ncol=3)
             
             # Add horizontal line at y=0 for reference
             ax.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=0.5)
@@ -686,7 +721,7 @@ class GraphComparison:
         for _, row in table_data.iterrows():
             # Format country name (replace hyphens with double hyphens)
             country_raw = row['Country']
-            country = country_raw.replace('-', '--').title()
+            country = country_raw.title()
             
             dataset_raw = row['Dataset']
             scenario = row['Removal Scenario'].replace('Filtered', '').replace('Original Pruned', 'Pruned')
@@ -795,7 +830,7 @@ class GraphComparison:
         # Process data with compact formatting
         for _, row in table_data.iterrows():
             country_raw = row['Country']
-            country = shorten_country(country_raw.replace('-', '--').title())
+            country = shorten_country(country_raw.title())
             dataset_raw = row['Dataset']
             scenario = shorten_scenario(row['Removal Scenario'])
             
@@ -1119,7 +1154,7 @@ class GraphComparison:
         plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(filtering_scenarios)]
         
         # Create separate plots for each scenario
-        fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+        fig, axes = plt.subplots(1, 2, figsize=(5.81, 6))
         
         datasets = plot_data['Dataset'].unique()
         
@@ -1176,7 +1211,7 @@ class GraphComparison:
             ax.set_xlabel('Station Density (stations per 1000 km road, log scale)')
             ax.set_ylabel('Edge Length Loss (%, log scale)')
             ax.set_title(f'{scenario}')
-            ax.legend()
+            ax.legend(loc='upper center', bbox_to_anchor=(0.5, 1.05), ncol=3)
             ax.grid(True, alpha=0.3)
             
             # Set reasonable axis limits
