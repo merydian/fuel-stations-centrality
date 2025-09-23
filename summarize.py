@@ -174,7 +174,7 @@ class GraphComparison:
         plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(scenarios_to_plot)]
         
         # Create subplots - one for each scenario
-        fig, axes = plt.subplots(2, 2, figsize=(5.81, 4.0))
+        fig, axes = plt.subplots(2, 2, figsize=(6.48, 4.0))
         axes = axes.flatten()
         
         datasets = plot_data['Dataset'].unique()
@@ -273,7 +273,7 @@ class GraphComparison:
         original_data = combined_data[combined_data['Removal Scenario'] == 'Original'].copy()
         
         # Create simple scatter plot
-        plt.figure(figsize=(5.81, 4.0))
+        plt.figure(figsize=(6.48, 4.0))
         
         datasets = original_data['Dataset'].unique()
 
@@ -456,7 +456,7 @@ class GraphComparison:
             logger.info(f"Vulnerability range: {min(country_vulnerabilities.values()):.2f}% to {max(country_vulnerabilities.values()):.2f}%")
             
             # Set up the plot with three bars: KNN, Random, Vulnerability
-            fig, ax = plt.subplots(figsize=(5.81, 5.0))
+            fig, ax = plt.subplots(figsize=(6.48, 5.0))
             
             # Set bar width and positions for three bars
             bar_width = 0.25
@@ -1154,7 +1154,7 @@ class GraphComparison:
         plot_data = data_with_diff[data_with_diff['Removal Scenario'].isin(filtering_scenarios)]
         
         # Create separate plots for each scenario
-        fig, axes = plt.subplots(1, 2, figsize=(5.81, 6))
+        fig, axes = plt.subplots(1, 2, figsize=(6.48, 6))
         
         datasets = plot_data['Dataset'].unique()
         
