@@ -260,9 +260,10 @@ class GraphComparison:
         
         return output_file, summary_file
 
+    
     def plot_stations_scatter(self, combined_data, output_dir):
         """
-        Create a simple scatter plot of stations vs total length.
+        Create a simple scatter plot of total length vs stations (axes switched).
         """
         logger.info("Creating simple stations scatter plot")
         
@@ -276,7 +277,24 @@ class GraphComparison:
         plt.figure(figsize=(6.48, 4.0))
         
         datasets = original_data['Dataset'].unique()
-
+    
+        # Countries to label
+        countries_to_label = {'luxembourg', 'us', 'iceland', 'australia', 'mauritania', 'niger', 'afghanistan'}
+        
+        # Country name display mapping
+        country_display_names = {
+            'us': 'USA',
+            'iceland': 'Iceland',
+            'australia': 'Australia', 
+            'norway': 'Norway',
+            'mauritania': 'Mauritania',
+            'niger': 'Niger',
+            'afghanistan': 'Afghanistan'
+        }
+        
+        # Collect all data points for collision detection
+        all_points = []
+        
         for dataset in datasets:
             data_subset = original_data[original_data['Dataset'] == dataset]
             
@@ -289,14 +307,18 @@ class GraphComparison:
             }
             custom_label = label_mapping.get(dataset, dataset)
             
-            # Get data for regression
-            x_data = data_subset['Stations_Used'].values
-            y_data = data_subset['Total Length (km)'].values
+            # Get data for regression - AXES SWITCHED
+            x_data = data_subset['Total Length (km)'].values  # Now x-axis is total length
+            y_data = data_subset['Stations_Used'].values      # Now y-axis is stations
             
             # Remove any zero values for log regression
             valid_mask = (x_data > 0) & (y_data > 0)
             x_valid = x_data[valid_mask]
             y_valid = y_data[valid_mask]
+            
+            # Store all points for collision detection (in log space)
+            for x, y in zip(x_valid, y_valid):
+                all_points.append((np.log10(x), np.log10(y)))
             
             # Plot scatter points
             plt.scatter(x_valid, y_valid, 
@@ -304,7 +326,6 @@ class GraphComparison:
                 color=self.dataset_colors.get(dataset, '#CCCCCC'),
                 alpha=0.6,
                 s=5)
-
             
             # Fit regression line in log space
             if len(x_valid) > 1:
@@ -339,8 +360,155 @@ class GraphComparison:
                     alpha=0.6,
                     s=20)
     
+        # Get axis limits for boundary checking
         plt.xscale('log')
         plt.yscale('log')
+        
+        # Force matplotlib to calculate the limits
+        plt.draw()
+        
+        # Get the actual axis limits in log space
+        x_min, x_max = plt.xlim()
+        y_min, y_max = plt.ylim()
+        log_x_min, log_x_max = np.log10(x_min), np.log10(x_max)
+        log_y_min, log_y_max = np.log10(y_min), np.log10(y_max)
+        
+        # Add some margin to keep labels fully inside
+        margin = 0.05
+        log_x_min += margin
+        log_x_max -= margin
+        log_y_min += margin
+        log_y_max -= margin
+    
+        # Collect countries to label with their positions
+        countries_to_place = []
+        for dataset in datasets:
+            data_subset = original_data[original_data['Dataset'] == dataset]
+            
+            for idx, row in data_subset.iterrows():
+                country = row['Country'].lower()
+                if country in countries_to_label:
+                    x_pos = row['Total Length (km)']
+                    y_pos = row['Stations_Used']
+                    
+                    # Only label if valid for log scale
+                    if x_pos > 0 and y_pos > 0:
+                        # Use proper display name
+                        display_name = country_display_names.get(country, row['Country'].title())
+                        
+                        countries_to_place.append({
+                            'country': display_name,
+                            'x_pos': x_pos,
+                            'y_pos': y_pos,
+                            'log_x': np.log10(x_pos),
+                            'log_y': np.log10(y_pos)
+                        })
+    
+        # Function to find best label position avoiding both points and other labels
+        def find_best_label_position(country_data, all_points, placed_labels, bounds):
+            """Find the best position for a label that avoids other data points and labels."""
+            log_x = country_data['log_x']
+            log_y = country_data['log_y']
+            log_x_min, log_x_max, log_y_min, log_y_max = bounds
+            
+            # Define potential label positions with varying distances
+            offsets = [
+                (0.2, 0.15),    # upper right
+                (-0.2, 0.15),   # upper left  
+                (0.2, -0.15),   # lower right
+                (-0.2, -0.15),  # lower left
+                (0.3, 0),       # right
+                (-0.3, 0),      # left
+                (0, 0.25),      # up
+                (0, -0.25),     # down
+                (0.35, 0.1),    # far right up
+                (-0.35, 0.1),   # far left up
+                (0.1, 0.35),    # up right
+                (-0.1, 0.35),   # up left
+                (0.4, -0.05),   # far right
+                (-0.4, -0.05),  # far left
+                (0.05, 0.4),    # far up
+                (0.05, -0.4),   # far down
+            ]
+            
+            best_offset = offsets[0]  # default
+            min_score = float('inf')
+            
+            for offset in offsets:
+                label_x = log_x + offset[0]
+                label_y = log_y + offset[1]
+                
+                # Check if label would be outside bounds
+                if (label_x < log_x_min or label_x > log_x_max or 
+                    label_y < log_y_min or label_y > log_y_max):
+                    continue  # Skip this position
+                
+                score = 0
+                
+                # Penalty for being near data points
+                for point_x, point_y in all_points:
+                    distance = np.sqrt((label_x - point_x)**2 + (label_y - point_y)**2)
+                    if distance < 0.15:  # Too close to data point
+                        score += 10 / (distance + 0.01)  # Heavy penalty
+                
+                # Penalty for being near other labels
+                for placed_label in placed_labels:
+                    distance = np.sqrt((label_x - placed_label['log_x'])**2 + (label_y - placed_label['log_y'])**2)
+                    if distance < 0.2:  # Too close to another label
+                        score += 20 / (distance + 0.01)  # Very heavy penalty
+                
+                # Small preference for positions that are further from origin (cleaner layout)
+                score += 0.1 / (np.sqrt(offset[0]**2 + offset[1]**2) + 0.1)
+                
+                if score < min_score:
+                    min_score = score
+                    best_offset = offset
+            
+            return best_offset
+    
+        # Place labels one by one, considering already placed labels
+        placed_labels = []
+        bounds = (log_x_min, log_x_max, log_y_min, log_y_max)
+        
+        # Sort countries by some criteria to get consistent placement
+        countries_to_place.sort(key=lambda x: (x['log_x'], x['log_y']))
+        
+        for country_data in countries_to_place:
+            # Find best position considering all constraints
+            best_offset = find_best_label_position(country_data, all_points, placed_labels, bounds)
+            
+            # Convert log space offset back to actual coordinates
+            label_log_x = country_data['log_x'] + best_offset[0]
+            label_log_y = country_data['log_y'] + best_offset[1]
+            label_x = 10**label_log_x
+            label_y = 10**label_log_y
+            
+            # Record this label position
+            placed_labels.append({
+                'log_x': label_log_x,
+                'log_y': label_log_y,
+                'country': country_data['country']
+            })
+            
+            # Place the annotation
+            plt.annotate(country_data['country'], 
+                       (country_data['x_pos'], country_data['y_pos']),
+                       xytext=(label_x, label_y),
+                       textcoords='data',
+                       fontsize=6,
+                       ha='center',
+                       va='center',
+                       bbox=dict(boxstyle='round,pad=0.2', 
+                               facecolor='white', 
+                               alpha=0.9,
+                               edgecolor='gray',
+                               linewidth=0.5),
+                       color='black',
+                       arrowprops=dict(arrowstyle='-',
+                                     connectionstyle='arc3,rad=0',
+                                     color='gray',
+                                     alpha=0.7,
+                                     linewidth=0.5))
         
         # Set readable tick labels
         from matplotlib.ticker import FuncFormatter
@@ -354,12 +522,13 @@ class GraphComparison:
                 return f'{x:.0f}'
         plt.xlim(0, None)  # Start x-axis at 0, auto-scale max
         plt.ylim(0, None)  # Start y-axis at 0, auto-scale max
-
+    
         plt.gca().xaxis.set_major_formatter(FuncFormatter(thousands_formatter))
         plt.gca().yaxis.set_major_formatter(FuncFormatter(thousands_formatter))
         
-        plt.xlabel('Number of Stations')
-        plt.ylabel('Total Road Network Length (km)')
+        # SWITCHED AXIS LABELS
+        plt.xlabel('Total Road Network Length (km)')  # Now x-axis is length
+        plt.ylabel('Number of Stations')              # Now y-axis is stations
         plt.legend()
         plt.grid(True, alpha=0.3)
         
@@ -371,6 +540,7 @@ class GraphComparison:
         # plt.show()
         
         return output_file
+    
 
     def plot_length_differences_by_dataset(self, combined_data, output_dir):
         """
