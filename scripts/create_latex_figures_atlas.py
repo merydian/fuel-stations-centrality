@@ -39,7 +39,7 @@ def generate_atlas_latex():
     for country in sorted(country_images.keys()):
         # Add section header for each country
         country_display = country.replace('-', ' ').title()
-        latex_code.append(f"\\subsection{{{country_display}}}")
+        # latex_code.append(f"\\subsection{{{country_display}}}")
         latex_code.append("")
         
         for img_path, subdir in sorted(country_images[country], key=lambda x: x[1].name):
